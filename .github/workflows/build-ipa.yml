@@ -2,9 +2,7 @@ name: Build IPA
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    branches: [main, ui-overhaul-2026]
   workflow_dispatch:
 
 permissions:
@@ -62,23 +60,17 @@ jobs:
           zip -qr k1emu.ipa Payload
           ls -lh k1emu.ipa
 
-      - name: Upload IPA artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: k1emu-ipa
-          path: k1emu.ipa
-          if-no-files-found: error
-
-      - name: Publish release on main
-        if: github.ref == 'refs/heads/main'
+      - name: Publish IPA to GitHub Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ui-overhaul-2026'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           TAG="v1.5.0"
           NOTES="k1emu v1.5.0 — redesigned settings/home, persistent preferences, real file import, tweak files, external-display shell and live FPS HUD."
+          TARGET="$GITHUB_SHA"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" k1emu.ipa --clobber
           else
-            gh release create "$TAG" k1emu.ipa --title "k1emu v1.5.0" --notes "$NOTES"
+            gh release create "$TAG" k1emu.ipa --target "$TARGET" --title "k1emu v1.5.0" --notes "$NOTES"
           fi
