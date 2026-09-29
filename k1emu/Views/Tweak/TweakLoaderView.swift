@@ -181,9 +181,10 @@ struct AddTweakSheet: View {
 
                 Section {
                     Button {
+                        error = nil
                         importing = true
                     } label: {
-                        Label("Import an existing tweak file", systemImage: "doc.badge.plus")
+                        Label("Choose tweak file", systemImage: "doc.badge.plus")
                     }
                     .tint(settings.accentColor)
 
@@ -194,7 +195,7 @@ struct AddTweakSheet: View {
                 } header: {
                     Text("Tweak payload")
                 } footer: {
-                    Text("The payload is written to Documents/Tweaks and stays with the tweak entry.")
+                    Text("Choose a text cheat/tweak file, or paste its payload below.")
                 }
 
                 if let error {
@@ -255,17 +256,31 @@ struct AddTweakSheet: View {
     private func importFile(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            guard let url = urls.first else { return }
+            guard let url = urls.first else {
+                error = "No tweak file was selected."
+                return
+            }
+
             let access = url.startAccessingSecurityScopedResource()
-            defer { if access { url.stopAccessingSecurityScopedResource() } }
+            defer {
+                if access {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
 
             do {
                 content = try String(contentsOf: url, encoding: .utf8)
-                if fileName.isEmpty { fileName = url.lastPathComponent }
-                if name.isEmpty { name = url.deletingPathExtension().lastPathComponent }
+                if fileName.isEmpty {
+                    fileName = url.lastPathComponent
+                }
+                if name.isEmpty {
+                    name = url.deletingPathExtension().lastPathComponent
+                }
+                error = nil
             } catch {
-                self.error = "Could not read this file as UTF-8 text."
+                self.error = "Could not read this tweak as UTF-8 text. Try a text-based .cht/.txt/.ini file."
             }
+
         case .failure(let error):
             self.error = "Import failed: \(error.localizedDescription)"
         }
