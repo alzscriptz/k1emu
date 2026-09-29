@@ -1,12 +1,10 @@
 import SwiftUI
 import UniformTypeIdentifiers
-import MobileCoreServices
 
 struct InstallROMSheet: View {
-    @EnvironmentObject var appState: AppState
     @EnvironmentObject var romLibrary: ROMLibrary
     @EnvironmentObject var settings: SettingsStore
-    @Environment(\.dismiss) private var dismiss
+    @Environment(.dismiss) private var dismiss
 
     @State private var installMode: InstallMode = .file
     @State private var urlText = ""
@@ -16,7 +14,6 @@ struct InstallROMSheet: View {
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var selectedFileName: String?
-    @State private var pendingURL: URL?
 
     enum InstallMode: String, CaseIterable {
         case file = "File"
@@ -25,80 +22,54 @@ struct InstallROMSheet: View {
 
     let systems = ["NDS", "GBA", "GB", "GBC", "NES", "SNES", "N64", "PS1", "Genesis", "SMS", "PCE", "Other"]
 
-    /// Every ROM extension we care about + generic binary so picker ALWAYS shows files
-    private static let romExtensions = [
-        "nds", "dsi", "gba", "gb", "gbc", "nes", "fds",
-        "sfc", "smc", "n64", "z64", "v64",
-        "iso", "bin", "cue", "chd", "pbp",
-        "md", "gen", "smd", "sms", "gg", "pce",
-        "zip", "7z", "rar"
-    ]
-
     private var allowedTypes: [UTType] {
-        var types: [UTType] = [
-            .item,           // ANY file — critical so .nds shows
-            .data,
-            .content,
-            .archive,
-            .zip
-        ]
-        for ext in Self.romExtensions {
-            if let t = UTType(filenameExtension: ext) {
-                types.append(t)
-            }
-            // Also register as public.data conformant
-            if let t = UTType(tag: ext, tagClass: .filenameExtension, conformingTo: .data) {
-                types.append(t)
-            }
-        }
-        return types
+        // .data is intentionally broad so Files/iCloud exposes ROMs even when
+        // the extension is unknown to the system. We validate/copy the file ourselves.
+        [.data, .item, .content]
     }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                settings.backgroundColor.opacity(0.97).ignoresSafeArea()
+                settings.backgroundColor.ignoresSafeArea()
 
                 Form {
                     Section {
                         Picker("Method", selection: $installMode) {
-                            ForEach(InstallMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                            ForEach(InstallMode.allCases, id: .self) { Text($0.rawValue).tag($0) }
                         }
                         .pickerStyle(.segmented)
                     }
-                    .listRowBackground(Color.white.opacity(0.06))
 
                     if installMode == .file {
-                        Section {
+                        Section("ROM file") {
                             Button {
                                 errorMessage = nil
                                 isImporting = true
                             } label: {
                                 HStack(spacing: 14) {
-                                    Image(systemName: "doc.badge.plus")
-                                        .font(.title)
+                                    Image(systemName: "folder.badge.plus")
+                                        .font(.title2)
                                         .foregroundStyle(settings.accentColor)
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(selectedFileName == nil ? "Choose ROM File" : "Change File")
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(selectedFileName ?? "Choose any ROM file")
                                             .font(.headline)
                                             .foregroundStyle(.primary)
-                                        Text(selectedFileName ?? ".nds  .gba  .n64  .nes  .zip  any ROM")
+                                        Text("Files • iCloud Drive • On My iPhone • any extension")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
                                     Spacer()
-                                    Image(systemName: "folder.fill")
-                                        .foregroundStyle(settings.accentColor)
+                                    Image(systemName: "chevron.right")
+                                        .foregroundStyle(.tertiary)
                                 }
-                                .padding(.vertical, 10)
+                                .contentShape(Rectangle())
+                                .padding(.vertical, 6)
                             }
                             .buttonStyle(.plain)
-                        } header: {
-                            Text("Select from Files")
                         } footer: {
-                            Text("Browse Files, iCloud, On My iPhone. .nds and all ROM types are allowed.")
+                            Text("The picker accepts generic data so .nds, .gba, .n64, .nes, archives and future ROM formats are not hidden.")
                         }
-                        .listRowBackground(Color.white.opacity(0.06))
                     } else {
                         Section("ROM URL") {
                             TextField("https://…/game.nds", text: $urlText)
@@ -106,51 +77,49 @@ struct InstallROMSheet: View {
                                 .keyboardType(.URL)
                                 .autocorrectionDisabled()
                         }
-                        .listRowBackground(Color.white.opacity(0.06))
                     }
 
                     Section("Details") {
-                        TextField("Display Name (optional)", text: $nameText)
+                        TextField("Display name", text: $nameText)
                         Picker("System", selection: $system) {
                             ForEach(systems, id: \.self) { Text($0).tag($0) }
                         }
                     }
-                    .listRowBackground(Color.white.opacity(0.06))
 
-                    if let error = errorMessage {
-                        Section {
-                            Text(error).foregroundStyle(.red).font(.footnote)
+                    if let errorMessage {
+                        Section("Error") {
+                            Text(errorMessage).foregroundStyle(.red).font(.footnote)
                         }
-                        .listRowBackground(Color.white.opacity(0.06))
                     }
 
                     Section {
                         Button {
-                            Task { await doInstall() }
+                            Task { await install() }
                         } label: {
                             HStack {
                                 Spacer()
-                                if isLoading { ProgressView() }
-                                else { Label("Install", systemImage: "arrow.down.circle.fill").font(.headline) }
+                                if isLoading {
+                                    ProgressView()
+                                } else {
+                                    Label("Add to Library", systemImage: "plus.circle.fill")
+                                        .font(.headline)
+                                }
                                 Spacer()
                             }
-                            .padding(.vertical, 6)
                         }
                         .disabled(isLoading || !canInstall)
                         .tint(settings.accentColor)
                     }
-                    .listRowBackground(settings.accentColor.opacity(0.18))
                 }
                 .scrollContentBackground(.hidden)
             }
-            .navigationTitle("Install ROM")
+            .navigationTitle("Add ROM")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
             }
-            // CRITICAL: .item lets user pick ANY file including .nds
             .fileImporter(
                 isPresented: $isImporting,
                 allowedContentTypes: allowedTypes,
@@ -164,48 +133,52 @@ struct InstallROMSheet: View {
     }
 
     private var canInstall: Bool {
-        if installMode == .url { return !urlText.trimmingCharacters(in: .whitespaces).isEmpty }
-        return selectedFileName != nil || pendingURL != nil
+        if installMode == .url {
+            return !urlText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return selectedFileName != nil
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             guard let url = urls.first else {
-                errorMessage = "No file selected"
+                errorMessage = "No file was selected."
                 return
             }
-            let access = url.startAccessingSecurityScopedResource()
-            // Keep access until we copy
-            let fileName = url.lastPathComponent
-            selectedFileName = fileName
-            pendingURL = url
 
-            let ext = (fileName as NSString).pathExtension.lowercased()
+            let access = url.startAccessingSecurityScopedResource()
+            defer {
+                if access { url.stopAccessingSecurityScopedResource() }
+            }
+
+            let fileName = url.lastPathComponent
+            let ext = url.pathExtension.lowercased()
+
+            selectedFileName = fileName
+            if nameText.isEmpty {
+                nameText = url.deletingPathExtension().lastPathComponent
+            }
             if let detected = detectSystem(ext: ext) {
                 system = detected
             }
-            if nameText.isEmpty {
-                nameText = (fileName as NSString).deletingPathExtension
-            }
 
-            // Copy immediately while we have security scope
             let game = romLibrary.addGame(
-                name: nameText.isEmpty ? (fileName as NSString).deletingPathExtension : nameText,
+                name: nameText.isEmpty ? url.deletingPathExtension().lastPathComponent : nameText,
                 system: system,
                 fileName: fileName,
                 sourceURL: url
             )
-            if access { url.stopAccessingSecurityScopedResource() }
 
             if game.fileURL == nil {
-                errorMessage = "Could not copy file. Try again or use URL install."
+                errorMessage = "The file picker worked, but the ROM could not be copied into the app sandbox."
+                selectedFileName = nil
             } else {
                 dismiss()
             }
 
-        case .failure(let err):
-            errorMessage = "Picker error: \(err.localizedDescription)"
+        case .failure(let error):
+            errorMessage = "File picker failed: \(error.localizedDescription)"
         }
     }
 
@@ -226,29 +199,25 @@ struct InstallROMSheet: View {
         }
     }
 
-    private func doInstall() async {
+    private func install() async {
+        guard installMode == .url else {
+            if selectedFileName == nil { isImporting = true }
+            return
+        }
+
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
 
-        if installMode == .url {
-            do {
-                _ = try await romLibrary.addFromURL(
-                    urlText.trimmingCharacters(in: .whitespacesAndNewlines),
-                    name: nameText.isEmpty ? nil : nameText,
-                    system: system
-                )
-                dismiss()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        } else {
-            // File already installed in handleImport — if user tapped Install without picking:
-            if selectedFileName == nil {
-                isImporting = true
-            } else {
-                dismiss()
-            }
+        do {
+            _ = try await romLibrary.addFromURL(
+                urlText.trimmingCharacters(in: .whitespacesAndNewlines),
+                name: nameText.isEmpty ? nil : nameText,
+                system: system
+            )
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }
