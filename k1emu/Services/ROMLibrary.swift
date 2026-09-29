@@ -74,23 +74,28 @@ final class ROMLibrary: ObservableObject {
     /// app's ROMs directory and the actual ROM is what gets registered in the library.
     @discardableResult
     func importROM(from sourceURL: URL, name: String?, system: String) throws -> GameItem {
-        let ext = sourceURL.pathExtension.lowercased()
+        // Stage external Files/iCloud URLs into our own sandbox before parsing.
+        // This makes the importer independent of the provider's URL lifetime.
+        let localSource = try stageExternalFile(sourceURL)
+        defer { try? fileManager.removeItem(at: localSource) }
+
+        let ext = localSource.pathExtension.lowercased()
 
         if ext == "zip" {
-            return try importZIP(from: sourceURL, name: name, system: system)
+            return try importZIP(from: localSource, name: name, system: system)
         }
 
-        let originalName = sourceURL.lastPathComponent
+        let originalName = localSource.lastPathComponent
         let displayName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalName = displayName?.isEmpty == false
             ? displayName!
-            : sourceURL.deletingPathExtension().lastPathComponent
+            : localSource.deletingPathExtension().lastPathComponent
 
         let game = addGame(
             name: finalName,
             system: system,
             fileName: originalName,
-            sourceURL: sourceURL
+            sourceURL: localSource
         )
 
         guard game.fileURL != nil else {
@@ -98,6 +103,26 @@ final class ROMLibrary: ObservableObject {
         }
 
         return game
+    }
+
+    private func stageExternalFile(_ sourceURL: URL) throws -> URL {
+        let ext = sourceURL.pathExtension.isEmpty ? "bin" : sourceURL.pathExtension
+        let destination = fileManager.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(ext)
+
+        do {
+            try fileManager.copyItem(at: sourceURL, to: destination)
+            return destination
+        } catch {
+            do {
+                let data = try Data(contentsOf: sourceURL, options: [.mappedIfSafe])
+                try data.write(to: destination, options: .atomic)
+                return destination
+            } catch {
+                throw ROMImportError.copyFailed
+            }
+        }
     }
 
     private func importZIP(from sourceURL: URL, name: String?, system: String) throws -> GameItem {
