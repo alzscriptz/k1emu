@@ -25,7 +25,7 @@ struct InstallROMSheet: View {
     // Keep ZIP explicitly listed so Files treats downloaded .zip ROM packages as selectable.
     // .data remains as a fallback for ROM extensions that iOS does not have a built-in UTType for.
     private var allowedTypes: [UTType] {
-        [.zip, .data]
+        [.item, .zip, .data]
     }
 
     var body: some View {
