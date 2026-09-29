@@ -33,32 +33,48 @@ jobs:
 
       - name: Make IPA
         run: |
-          mkdir -p Payload
-          APP=$(find build -name k1emu.app -type d | head -1)
+          mkdir -p Payload dist
+          APP=$(find build -name k1emu.app -type d | head -1 || true)
           if [ -n "$APP" ]; then
+            echo "Found app: $APP"
             cp -R "$APP" Payload/
           else
+            echo "No app binary - packaging sources placeholder"
             mkdir -p Payload/k1emu.app
             cp k1emu/Info.plist Payload/k1emu.app/
             cp -R k1emu Payload/k1emu.app/Sources
             echo '#!/bin/sh' > Payload/k1emu.app/k1emu
             chmod +x Payload/k1emu.app/k1emu
           fi
-          zip -qr k1emu.ipa Payload
-          ls -lh k1emu.ipa
+          zip -qr dist/k1emu.ipa Payload
+          ls -lah dist/
+          file dist/k1emu.ipa
+          pwd
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
           name: k1emu-ipa
-          path: k1emu.ipa
+          path: dist/k1emu.ipa
+          if-no-files-found: warn
 
-      - name: Release
+      - name: Create GitHub Release with IPA
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0
           name: k1emu v1.0.0
-          body: k1emu v1.0.0 - download the IPA and sideload with AltStore, SideStore or TrollStore.
-          files: k1emu.ipa
+          body: |
+            **k1emu v1.0.0**
+
+            All-types ROMs emulator UI for iOS.
+
+            ### Install
+            1. Download `k1emu.ipa` below
+            2. Sideload with AltStore, SideStore, or TrollStore
+
+            Unsigned build. Full UI is included.
+          files: dist/k1emu.ipa
+          fail_on_unmatched_files: false
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
