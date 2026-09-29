@@ -66,11 +66,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v1.6.1"
-          NOTES="k1emu v1.6.1 — hardened Files/ZIP import and tweak import on iOS 26."
+          TAG="v1.6.2"
+          NOTES="k1emu v1.6.2 — replaced SwiftUI fileImporter with UIKit document picker for reliable ROM/ZIP selection."
           TARGET="$GITHUB_SHA"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" k1emu.ipa --clobber
           else
-            gh release create "$TAG" k1emu.ipa --target "$TARGET" --title "k1emu v1.6.1" --notes "$NOTES"
+            gh release create "$TAG" k1emu.ipa --target "$TARGET" --title "k1emu v1.6.2" --notes "$NOTES"
           fi
