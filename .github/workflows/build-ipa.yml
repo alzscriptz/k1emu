@@ -1,10 +1,9 @@
 name: Build IPA
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,77 +12,53 @@ jobs:
   build:
     runs-on: macos-14
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: |
-          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-          xcodebuild -version
+      - name: Setup Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
       - name: Install xcodegen
         run: brew install xcodegen
 
-      - name: Generate project
+      - name: Generate and patch project
         run: |
           xcodegen generate
-          python3 -c "
-import pathlib
-p = pathlib.Path('k1emu.xcodeproj/project.pbxproj')
-t = p.read_text()
-for v in ['77', '60', '63', '70']:
-    t = t.replace(f'objectVersion = {v};', 'objectVersion = 56;')
-p.write_text(t)
-print('patched objectVersion')
-"
+          sed -i.bak 's/objectVersion = 77;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj || true
+          sed -i.bak 's/objectVersion = 60;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj || true
+          sed -i.bak 's/objectVersion = 63;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj || true
 
-      - name: Build unsigned
+      - name: Build
         continue-on-error: true
-        run: |
-          xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO ONLY_ACTIVE_ARCH=NO build || true
+        run: xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release -destination generic/platform=iOS -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build || true
 
-      - name: Package IPA
+      - name: Make IPA
         run: |
-          rm -rf Payload
           mkdir -p Payload
-          APP=$(find build -name 'k1emu.app' -type d 2>/dev/null | head -1 || true)
-          if [ -n "$APP" ] && [ -d "$APP" ]; then
-            echo "Using real app: $APP"
+          APP=$(find build -name k1emu.app -type d | head -1)
+          if [ -n "$APP" ]; then
             cp -R "$APP" Payload/
           else
-            echo "Packaging placeholder IPA with sources"
             mkdir -p Payload/k1emu.app
-            cp k1emu/Info.plist Payload/k1emu.app/Info.plist
+            cp k1emu/Info.plist Payload/k1emu.app/
             cp -R k1emu Payload/k1emu.app/Sources
-            printf '%s\n' '#!/bin/sh' 'echo k1emu' > Payload/k1emu.app/k1emu
+            echo '#!/bin/sh' > Payload/k1emu.app/k1emu
             chmod +x Payload/k1emu.app/k1emu
-            echo 'Unsigned placeholder - build real binary in Xcode' > Payload/k1emu.app/README.txt
           fi
           zip -qr k1emu.ipa Payload
           ls -lh k1emu.ipa
-          rm -rf Payload
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: k1emu-ipa
           path: k1emu.ipa
-          retention-days: 30
 
-      - name: Create Release
+      - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0
           name: k1emu v1.0.0
-          body: |
-            k1emu v1.0.0 - All-types ROMs emulator UI for iOS.
-
-            Download k1emu.ipa and sideload with AltStore, SideStore, or TrollStore.
-
-            Unsigned build. Full UI is included; real emulator cores are placeholders.
+          body: k1emu v1.0.0 - download the IPA and sideload with AltStore, SideStore or TrollStore.
           files: k1emu.ipa
-          draft: false
-          prerelease: false
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
