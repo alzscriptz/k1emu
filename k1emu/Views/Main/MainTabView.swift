@@ -26,13 +26,11 @@ struct MainTabView: View {
         }
         .tint(settings.accentColor)
         .onAppear {
-            // Make tab bar glassier on supported OS
             let appearance = UITabBarAppearance()
-            appearance.configureWithDefaultBackground()
-            if #available(iOS 18.0, *) {
-                // Future liquid glass will pick this up automatically
-            }
+            appearance.configureWithTransparentBackground()
+            appearance.backgroundEffect = UIBlurEffect(style: .systemUltraThinMaterialDark)
             UITabBar.appearance().standardAppearance = appearance
+            UITabBar.appearance().scrollEdgeAppearance = appearance
         }
     }
 }

@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Placeholder play view – real cores will render here later.
 struct EmulatorPlayView: View {
     let game: GameItem
     @EnvironmentObject var appState: AppState
@@ -10,51 +9,60 @@ struct EmulatorPlayView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // Simulated game canvas
-            VStack(spacing: 24) {
+            // Game canvas placeholder (cores render here later)
+            VStack(spacing: 20) {
                 Spacer()
                 Image(systemName: "gamecontroller.fill")
-                    .font(.system(size: 72))
+                    .font(.system(size: 64))
                     .foregroundStyle(settings.accentColor)
                 Text(game.name)
                     .font(.title2.bold())
                     .foregroundStyle(.white)
                 Text(game.displaySystem)
                     .font(.subheadline)
-                    .foregroundStyle(.white.opacity(0.7))
-                Text("Core placeholder – real emulator cores will render here")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.5))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
+                    .foregroundStyle(.white.opacity(0.6))
+                if let tweak = appState.loadedTweakName {
+                    Text("Tweak: \(tweak)")
+                        .font(.caption)
+                        .foregroundStyle(settings.joystickAccent)
+                }
+                Text("Core placeholder — real graphics render here")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.35))
                 Spacer()
 
-                // Simple on-screen controls hint
-                HStack(spacing: 40) {
-                    Button {
-                        appState.showInGameMenu = true
-                    } label: {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.title)
-                            .padding()
-                            .background(.ultraThinMaterial, in: Circle())
+                HStack(spacing: 28) {
+                    controlBtn("line.3.horizontal") { appState.showInGameMenu = true }
+                    if settings.tvModeEnabled {
+                        controlBtn("tv") { appState.isTVModeActive.toggle() }
                     }
-                    Button {
-                        // Toggle TV mode manually for testing
-                        if settings.tvModeEnabled {
-                            appState.isTVModeActive.toggle()
-                        }
-                    } label: {
-                        Image(systemName: "tv")
-                            .font(.title)
-                            .padding()
-                            .background(.ultraThinMaterial, in: Circle())
-                    }
+                    controlBtn("xmark") { appState.quitGame() }
                 }
-                .padding(.bottom, 40)
+                .padding(.bottom, 36)
+            }
+
+            // FPS top-right
+            VStack {
+                HStack {
+                    Spacer()
+                    FPSOverlay()
+                        .padding(.trailing, 16)
+                        .padding(.top, 12)
+                }
+                Spacer()
             }
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+    }
+
+    private func controlBtn(_ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundStyle(.white)
+                .frame(width: 52, height: 52)
+                .background(.ultraThinMaterial, in: Circle())
+        }
     }
 }

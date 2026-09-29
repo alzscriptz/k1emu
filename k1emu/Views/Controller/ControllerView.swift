@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Full Xbox-style controller layout used when phone is the controller (TV / external display mode).
 struct ControllerView: View {
     let game: GameItem
     @EnvironmentObject var appState: AppState
@@ -13,18 +12,27 @@ struct ControllerView: View {
         ZStack {
             settings.joystickColor.ignoresSafeArea()
 
-            // Browser mode overlay takes over the whole controller screen
             if appState.isBrowserMode {
                 BrowserModeView()
             } else {
                 controllerLayout
             }
 
-            // Blue Xbox-style outline when mouse mode is active
+            // FPS always top-right on TV / controller mode
+            VStack {
+                HStack {
+                    Spacer()
+                    FPSOverlay()
+                        .padding(.trailing, 14)
+                        .padding(.top, 10)
+                }
+                Spacer()
+            }
+
             if appState.isMouseMode {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(Color.blue, lineWidth: 4)
-                    .padding(8)
+                    .padding(6)
                     .allowsHitTesting(false)
             }
         }
@@ -35,110 +43,96 @@ struct ControllerView: View {
     private var controllerLayout: some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
-                // Top bar: Menu | Windows | Windows | Browser button
+                // Top bar
                 HStack {
-                    // Menu button
-                    ControllerButton(systemName: "line.3.horizontal", size: 44) {
+                    ControllerButton(systemName: "line.3.horizontal", size: 42) {
                         appState.showInGameMenu = true
-                        // also ensure outline if needed
                     }
 
                     Spacer()
 
-                    // Two Windows buttons (mouse mode toggle)
-                    HStack(spacing: 12) {
-                        ControllerButton(systemName: "rectangle.on.rectangle", size: 40) {
-                            toggleMouseMode()
+                    HStack(spacing: 10) {
+                        ControllerButton(systemName: "rectangle.on.rectangle", size: 38) {
+                            appState.isMouseMode.toggle()
                         }
-                        ControllerButton(systemName: "rectangle.on.rectangle", size: 40) {
-                            toggleMouseMode()
+                        ControllerButton(systemName: "rectangle.on.rectangle", size: 38) {
+                            appState.isMouseMode.toggle()
                         }
                     }
 
                     Spacer()
 
-                    // Browser mode button (cool picture)
                     Button {
                         appState.isBrowserMode.toggle()
                     } label: {
                         ZStack {
                             Circle()
                                 .fill(settings.joystickAccent.opacity(0.25))
-                                .frame(width: 48, height: 48)
+                                .frame(width: 46, height: 46)
                             Image(systemName: "safari.fill")
-                                .font(.title2)
+                                .font(.title3)
                                 .foregroundStyle(settings.joystickAccent)
                         }
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 12)
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+
+                // Game title chip
+                Text(game.name)
+                    .font(.caption.bold())
+                    .foregroundStyle(.white.opacity(0.8))
+                    .padding(.top, 6)
 
                 Spacer()
 
-                // Main controls row
                 HStack(alignment: .center, spacing: 0) {
-                    // Left side: D-Pad + Left Stick
-                    VStack(spacing: 28) {
+                    VStack(spacing: 24) {
                         DPadView(accent: settings.joystickAccent)
                         AnalogStickView(offset: $leftStick, accent: settings.joystickAccent)
                     }
                     .frame(maxWidth: .infinity)
 
-                    // Center face buttons (A B X Y style)
-                    VStack(spacing: 16) {
-                        HStack(spacing: 20) {
+                    VStack(spacing: 14) {
+                        HStack(spacing: 18) {
                             FaceButton(label: "Y", color: .yellow)
                             FaceButton(label: "X", color: .blue)
                         }
-                        HStack(spacing: 20) {
+                        HStack(spacing: 18) {
                             FaceButton(label: "B", color: .red)
                             FaceButton(label: "A", color: .green)
                         }
                     }
                     .frame(maxWidth: .infinity)
 
-                    // Right side: Right Stick + triggers hint
-                    VStack(spacing: 28) {
+                    VStack(spacing: 24) {
                         AnalogStickView(offset: $rightStick, accent: settings.joystickAccent)
-                        HStack(spacing: 16) {
+                        HStack(spacing: 12) {
                             TriggerButton(label: "LT")
                             TriggerButton(label: "RT")
                         }
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 8)
 
                 Spacer()
 
-                // Bottom: Select / Start + game name
                 HStack {
-                    ControllerButton(systemName: "minus", size: 36) {}
+                    ControllerButton(systemName: "minus", size: 34) {}
                     Spacer()
-                    VStack(spacing: 2) {
-                        Text(game.name)
-                            .font(.caption.bold())
-                            .foregroundStyle(.white.opacity(0.9))
-                        Text(appState.isMouseMode ? "MOUSE MODE" : "CONTROLLER")
-                            .font(.caption2)
-                            .foregroundStyle(settings.joystickAccent)
-                    }
+                    Text(appState.isMouseMode ? "MOUSE" : "CONTROLLER")
+                        .font(.caption2.bold())
+                        .foregroundStyle(settings.joystickAccent)
                     Spacer()
-                    ControllerButton(systemName: "plus", size: 36) {}
+                    ControllerButton(systemName: "plus", size: 34) {}
                 }
-                .padding(.horizontal, 32)
-                .padding(.bottom, 24)
+                .padding(.horizontal, 28)
+                .padding(.bottom, 20)
             }
         }
     }
-
-    private func toggleMouseMode() {
-        appState.isMouseMode.toggle()
-    }
 }
-
-// MARK: - Controller sub-components
 
 struct ControllerButton: View {
     let systemName: String
@@ -149,17 +143,16 @@ struct ControllerButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: size * 0.45))
+                .font(.system(size: size * 0.42))
                 .foregroundStyle(.white)
                 .frame(width: size, height: size)
                 .background(
                     Circle()
                         .fill(settings.joystickColor)
-                        .shadow(color: .black.opacity(0.4), radius: 4, y: 2)
+                        .shadow(color: .black.opacity(0.45), radius: 4, y: 2)
                 )
                 .overlay(
-                    Circle()
-                        .stroke(settings.joystickAccent.opacity(0.5), lineWidth: 1.5)
+                    Circle().stroke(settings.joystickAccent.opacity(0.45), lineWidth: 1.5)
                 )
         }
     }
@@ -171,9 +164,9 @@ struct FaceButton: View {
 
     var body: some View {
         Text(label)
-            .font(.title2.bold())
+            .font(.title3.bold())
             .foregroundStyle(.white)
-            .frame(width: 56, height: 56)
+            .frame(width: 54, height: 54)
             .background(
                 Circle()
                     .fill(color.opacity(0.85))
@@ -190,7 +183,7 @@ struct TriggerButton: View {
         Text(label)
             .font(.caption.bold())
             .foregroundStyle(.white)
-            .frame(width: 52, height: 28)
+            .frame(width: 50, height: 26)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(settings.joystickAccent.opacity(0.3))
@@ -203,18 +196,15 @@ struct DPadView: View {
 
     var body: some View {
         ZStack {
-            // Vertical bar
             RoundedRectangle(cornerRadius: 6)
-                .fill(Color.white.opacity(0.15))
-                .frame(width: 36, height: 110)
-            // Horizontal bar
+                .fill(Color.white.opacity(0.14))
+                .frame(width: 34, height: 104)
             RoundedRectangle(cornerRadius: 6)
-                .fill(Color.white.opacity(0.15))
-                .frame(width: 110, height: 36)
-            // Center
+                .fill(Color.white.opacity(0.14))
+                .frame(width: 104, height: 34)
             Circle()
-                .fill(accent.opacity(0.4))
-                .frame(width: 28, height: 28)
+                .fill(accent.opacity(0.35))
+                .frame(width: 26, height: 26)
         }
     }
 }
@@ -222,18 +212,18 @@ struct DPadView: View {
 struct AnalogStickView: View {
     @Binding var offset: CGSize
     let accent: Color
-    private let maxTravel: CGFloat = 36
+    private let maxTravel: CGFloat = 34
 
     var body: some View {
         ZStack {
             Circle()
                 .fill(Color.white.opacity(0.1))
-                .frame(width: 100, height: 100)
+                .frame(width: 96, height: 96)
             Circle()
                 .fill(
-                    LinearGradient(colors: [accent.opacity(0.8), accent.opacity(0.4)], startPoint: .top, endPoint: .bottom)
+                    LinearGradient(colors: [accent.opacity(0.85), accent.opacity(0.4)], startPoint: .top, endPoint: .bottom)
                 )
-                .frame(width: 58, height: 58)
+                .frame(width: 54, height: 54)
                 .offset(offset)
                 .gesture(
                     DragGesture()
@@ -243,9 +233,7 @@ struct AnalogStickView: View {
                             offset = CGSize(width: x, height: y)
                         }
                         .onEnded { _ in
-                            withAnimation(.spring(response: 0.25)) {
-                                offset = .zero
-                            }
+                            withAnimation(.spring(response: 0.25)) { offset = .zero }
                         }
                 )
                 .shadow(color: accent.opacity(0.5), radius: 8)
