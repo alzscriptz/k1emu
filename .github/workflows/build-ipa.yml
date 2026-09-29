@@ -66,8 +66,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v1.6.0"
-          NOTES="k1emu v1.6.0 — redesigned settings/home, persistent preferences, real file import, tweak files, external-display shell and live FPS HUD."
+          TAG="v1.6.1"
+          NOTES="k1emu v1.6.1 — hardened Files/ZIP import and tweak import on iOS 26."
           TARGET="$GITHUB_SHA"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" k1emu.ipa --clobber
