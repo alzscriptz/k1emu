@@ -5,6 +5,7 @@ struct TweakLoaderView: View {
     @EnvironmentObject var tweakStore: TweakStore
     @EnvironmentObject var settings: SettingsStore
     @State private var showAdd = false
+    @State private var editingTweak: TweakItem?
 
     var body: some View {
         NavigationStack {
@@ -20,7 +21,10 @@ struct TweakLoaderView: View {
                                 Text("Real files • presets • imports").font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Button { showAdd = true } label: {
+                            Button {
+                                editingTweak = nil
+                                showAdd = true
+                            } label: {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.title2)
                                     .foregroundStyle(settings.accentColor)
@@ -41,6 +45,7 @@ struct TweakLoaderView: View {
                                     .padding(.horizontal, 16)
                                     .contextMenu {
                                         Button {
+                                            editingTweak = tweak
                                             showAdd = true
                                         } label: {
                                             Label("Edit", systemImage: "pencil")
@@ -54,7 +59,10 @@ struct TweakLoaderView: View {
                             }
                         }
 
-                        Button { showAdd = true } label: {
+                        Button {
+                            editingTweak = nil
+                            showAdd = true
+                        } label: {
                             Label("Import / Create Tweak", systemImage: "plus")
                                 .font(.headline)
                                 .frame(maxWidth: .infinity)
@@ -73,8 +81,8 @@ struct TweakLoaderView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $showAdd) {
-                AddTweakSheet()
+            .sheet(isPresented: $showAdd, onDismiss: { editingTweak = nil }) {
+                AddTweakSheet(tweak: editingTweak)
             }
         }
     }
@@ -129,19 +137,29 @@ struct TweakRow: View {
 }
 
 struct AddTweakSheet: View {
+    let tweak: TweakItem?
     @EnvironmentObject var tweakStore: TweakStore
     @EnvironmentObject var settings: SettingsStore
-    @Environment(.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
 
-    @State private var name = ""
-    @State private var description = ""
-    @State private var system = "All"
-    @State private var fileName = ""
-    @State private var content = ""
+    @State private var name: String
+    @State private var description: String
+    @State private var system: String
+    @State private var fileName: String
+    @State private var content: String
     @State private var importing = false
     @State private var error: String?
 
     let systems = ["All", "NDS", "NES", "SNES", "N64", "GB", "GBC", "GBA", "PS1", "Genesis", "SMS", "PCE", "Other"]
+
+    init(tweak: TweakItem? = nil) {
+        self.tweak = tweak
+        _name = State(initialValue: tweak?.name ?? "")
+        _description = State(initialValue: tweak?.description ?? "")
+        _system = State(initialValue: tweak?.system ?? "All")
+        _fileName = State(initialValue: tweak?.fileName ?? "")
+        _content = State(initialValue: tweak?.content ?? "")
+    }
 
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -154,7 +172,7 @@ struct AddTweakSheet: View {
                     TextField("Name", text: $name)
                     TextField("Description", text: $description)
                     Picker("System", selection: $system) {
-                        ForEach(systems, id: \.self) { Text($0) }
+                        ForEach(systems, id: \.self) { item in Text(item) }
                     }
                     TextField("File name", text: $fileName)
                         .textInputAutocapitalization(.never)
@@ -185,7 +203,7 @@ struct AddTweakSheet: View {
                     }
                 }
             }
-            .navigationTitle("Tweak Builder")
+            .navigationTitle(tweak == nil ? "Tweak Builder" : "Edit Tweak")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -215,14 +233,22 @@ struct AddTweakSheet: View {
             : fileName
         let finalName = safeName.contains(".") ? safeName : safeName + ".cht"
 
-        let tweak = TweakItem(
+        let value = TweakItem(
+            id: tweak?.id ?? UUID(),
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             description: description,
             system: system,
             fileName: finalName,
-            content: content
+            content: content,
+            dateAdded: tweak?.dateAdded ?? Date(),
+            isEnabled: tweak?.isEnabled ?? true
         )
-        tweakStore.add(tweak)
+
+        if tweak == nil {
+            tweakStore.add(value)
+        } else {
+            tweakStore.update(value)
+        }
         dismiss()
     }
 
@@ -236,9 +262,7 @@ struct AddTweakSheet: View {
             do {
                 content = try String(contentsOf: url, encoding: .utf8)
                 if fileName.isEmpty { fileName = url.lastPathComponent }
-                if name.isEmpty {
-                    name = url.deletingPathExtension().lastPathComponent
-                }
+                if name.isEmpty { name = url.deletingPathExtension().lastPathComponent }
             } catch {
                 self.error = "Could not read this file as UTF-8 text."
             }
@@ -253,7 +277,7 @@ struct TweakPickerSheet: View {
     @EnvironmentObject var romLibrary: ROMLibrary
     @EnvironmentObject var tweakStore: TweakStore
     @EnvironmentObject var appState: AppState
-    @Environment(.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
 
     var compatibleTweaks: [TweakItem] {
         tweakStore.tweaks.filter {
@@ -279,23 +303,23 @@ struct TweakPickerSheet: View {
                         Text("No compatible tweaks yet.")
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(compatibleTweaks) { tweak in
+                        ForEach(compatibleTweaks) { item in
                             Button {
                                 var g = game
-                                g.appliedTweakID = tweak.id
+                                g.appliedTweakID = item.id
                                 romLibrary.update(g)
-                                appState.loadedTweakName = tweak.name
+                                appState.loadedTweakName = item.name
                                 dismiss()
                             } label: {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 3) {
-                                        Text(tweak.name)
-                                        Text(tweak.fileName)
+                                        Text(item.name)
+                                        Text(item.fileName)
                                             .font(.caption2.monospaced())
                                             .foregroundStyle(.secondary)
                                     }
                                     Spacer()
-                                    if game.appliedTweakID == tweak.id {
+                                    if game.appliedTweakID == item.id {
                                         Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
                                     }
                                 }

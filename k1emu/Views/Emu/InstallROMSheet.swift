@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 struct InstallROMSheet: View {
     @EnvironmentObject var romLibrary: ROMLibrary
     @EnvironmentObject var settings: SettingsStore
-    @Environment(.dismiss) private var dismiss
+    @Environment(\.dismiss) private var dismiss
 
     @State private var installMode: InstallMode = .file
     @State private var urlText = ""
@@ -23,8 +23,6 @@ struct InstallROMSheet: View {
     let systems = ["NDS", "GBA", "GB", "GBC", "NES", "SNES", "N64", "PS1", "Genesis", "SMS", "PCE", "Other"]
 
     private var allowedTypes: [UTType] {
-        // .data is intentionally broad so Files/iCloud exposes ROMs even when
-        // the extension is unknown to the system. We validate/copy the file ourselves.
         [.data, .item, .content]
     }
 
@@ -36,7 +34,9 @@ struct InstallROMSheet: View {
                 Form {
                     Section {
                         Picker("Method", selection: $installMode) {
-                            ForEach(InstallMode.allCases, id: .self) { Text($0.rawValue).tag($0) }
+                            ForEach(InstallMode.allCases, id: \.self) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
                         }
                         .pickerStyle(.segmented)
                     }
@@ -82,7 +82,9 @@ struct InstallROMSheet: View {
                     Section("Details") {
                         TextField("Display name", text: $nameText)
                         Picker("System", selection: $system) {
-                            ForEach(systems, id: \.self) { Text($0).tag($0) }
+                            ForEach(systems, id: \.self) { item in
+                                Text(item).tag(item)
+                            }
                         }
                     }
 
