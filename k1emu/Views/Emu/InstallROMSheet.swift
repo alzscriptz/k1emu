@@ -22,8 +22,10 @@ struct InstallROMSheet: View {
 
     let systems = ["NDS", "GBA", "GB", "GBC", "NES", "SNES", "N64", "PS1", "Genesis", "SMS", "PCE", "Other"]
 
+    // Keep ZIP explicitly listed so Files treats downloaded .zip ROM packages as selectable.
+    // .data remains as a fallback for ROM extensions that iOS does not have a built-in UTType for.
     private var allowedTypes: [UTType] {
-        [.data, .item, .content, .archive, .zip]
+        [.zip, .data]
     }
 
     var body: some View {
@@ -45,32 +47,36 @@ struct InstallROMSheet: View {
                         Section {
                             Button {
                                 errorMessage = nil
+                                selectedFileName = nil
                                 isImporting = true
                             } label: {
                                 HStack(spacing: 14) {
                                     Image(systemName: "folder.badge.plus")
                                         .font(.title2)
                                         .foregroundStyle(settings.accentColor)
+
                                     VStack(alignment: .leading, spacing: 4) {
-                                        Text(selectedFileName ?? "Choose any ROM file")
+                                        Text(selectedFileName ?? "Choose a ROM or ZIP")
                                             .font(.headline)
                                             .foregroundStyle(.primary)
-                                        Text("Files • iCloud Drive • On My iPhone • any extension")
+                                        Text("Files • Downloads • iCloud Drive • On My iPhone")
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
+
                                     Spacer()
+
                                     Image(systemName: "chevron.right")
                                         .foregroundStyle(.tertiary)
                                 }
                                 .contentShape(Rectangle())
-                                .padding(.vertical, 6)
+                                .padding(.vertical, 7)
                             }
                             .buttonStyle(.plain)
                         } header: {
                             Text("ROM file")
                         } footer: {
-                            Text("The picker accepts generic data so .nds, .gba, .n64, .nes, archives and future ROM formats are not hidden.")
+                            Text("ZIP files are opened inside k1emu and the first supported ROM is extracted into your library.")
                         }
                     } else {
                         Section("ROM URL") {
@@ -92,7 +98,9 @@ struct InstallROMSheet: View {
 
                     if let errorMessage {
                         Section("Error") {
-                            Text(errorMessage).foregroundStyle(.red).font(.footnote)
+                            Text(errorMessage)
+                                .foregroundStyle(.red)
+                                .font(.footnote)
                         }
                     }
 
@@ -153,7 +161,9 @@ struct InstallROMSheet: View {
 
             let access = url.startAccessingSecurityScopedResource()
             defer {
-                if access { url.stopAccessingSecurityScopedResource() }
+                if access {
+                    url.stopAccessingSecurityScopedResource()
+                }
             }
 
             let fileName = url.lastPathComponent
@@ -203,7 +213,9 @@ struct InstallROMSheet: View {
 
     private func install() async {
         guard installMode == .url else {
-            if selectedFileName == nil { isImporting = true }
+            if selectedFileName == nil {
+                isImporting = true
+            }
             return
         }
 
