@@ -4,6 +4,7 @@ struct SettingsView: View {
     @EnvironmentObject var settings: SettingsStore
     @EnvironmentObject var appState: AppState
     @StateObject private var coreLoader = CoreLoader.shared
+    @State private var showResetAlert = false
 
     var body: some View {
         NavigationStack {
@@ -11,138 +12,173 @@ struct SettingsView: View {
                 AnimatedBackground().ignoresSafeArea()
 
                 ScrollView {
-                    VStack(spacing: 20) {
-                        headerCard
+                    VStack(spacing: 16) {
+                        hero
 
-                        settingsCard(title: "Colors", icon: "paintpalette.fill") {
+                        settingsCard(title: "Appearance", icon: "paintpalette.fill") {
                             colorRow("Background", color: $settings.backgroundColor)
-                            presetStrip(SettingsStore.backgroundPresets.map { ($0.0, $0.1) }) { settings.backgroundColor = $0 }
+                            presetStrip(SettingsStore.backgroundPresets) { settings.backgroundColor = $0 }
+
                             colorRow("Accent", color: $settings.accentColor)
                             presetStrip(SettingsStore.accentPresets) { settings.accentColor = $0 }
-                            colorRow("Joystick Base", color: $settings.joystickColor)
-                            colorRow("Joystick Accent", color: $settings.joystickAccent)
-                            Text("Joystick Presets").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                            ForEach(SettingsStore.joystickPresets, id: \.0) { name, base, accent in
-                                Button {
-                                    settings.joystickColor = base
-                                    settings.joystickAccent = accent
-                                } label: {
-                                    HStack(spacing: 10) {
-                                        Circle().fill(base).frame(width: 22, height: 22)
-                                        Circle().fill(accent).frame(width: 22, height: 22)
-                                        Text(name).foregroundStyle(.primary)
-                                        Spacer()
-                                    }
+
+                            Picker("Background", selection: $settings.backgroundEffect) {
+                                ForEach(BackgroundEffect.allCases) { effect in
+                                    Text(effect.rawValue).tag(effect)
                                 }
-                                .buttonStyle(.plain)
                             }
+
+                            Toggle("Liquid glass surfaces", isOn: $settings.useLiquidGlass)
+                                .tint(settings.accentColor)
                         }
 
-                        settingsCard(title: "Background Effect", icon: "sparkles") {
-                            ForEach(BackgroundEffect.allCases) { effect in
-                                Button {
-                                    settings.backgroundEffect = effect
-                                    if effect == .liquid { settings.useLiquidGlass = true }
-                                } label: {
-                                    HStack {
-                                        Text(effect.rawValue)
-                                        Spacer()
-                                        if settings.backgroundEffect == effect {
-                                            Image(systemName: "checkmark.circle.fill").foregroundStyle(settings.accentColor)
+                        settingsCard(title: "Controller", icon: "gamecontroller.fill") {
+                            colorRow("Base", color: $settings.joystickColor)
+                            colorRow("Accent", color: $settings.joystickAccent)
+
+                            Text("Controller presets")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 10) {
+                                    ForEach(SettingsStore.joystickPresets, id: \.0) { name, base, accent in
+                                        Button {
+                                            settings.joystickColor = base
+                                            settings.joystickAccent = accent
+                                        } label: {
+                                            HStack(spacing: 6) {
+                                                Circle().fill(base).frame(width: 16, height: 16)
+                                                Circle().fill(accent).frame(width: 16, height: 16)
+                                                Text(name).font(.caption.weight(.semibold))
+                                            }
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 8)
+                                            .background(.white.opacity(0.06), in: Capsule())
                                         }
+                                        .buttonStyle(.plain)
                                     }
-                                    .padding(.vertical, 4)
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
 
-                        settingsCard(title: "Cores (dylibs)", icon: "cpu") {
+                        settingsCard(title: "Performance", icon: "gauge.with.dots.needle.67percent") {
+                            Toggle(isOn: $settings.showFPS) {
+                                Label("Live FPS overlay", systemImage: "speedometer")
+                            }
+                            .tint(settings.accentColor)
+
+                            Toggle(isOn: $settings.target4KWhenStable) {
+                                Label("Prefer 4K external output", systemImage: "4k.tv")
+                            }
+                            .tint(settings.accentColor)
+
+                            Text("FPS is measured from real display callbacks. It is never simulated. The external-display shell reports 4K only when the connected display actually exposes a 3840×2160-class mode.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        settingsCard(title: "TV & External Display", icon: "tv.fill") {
+                            Toggle(isOn: $settings.tvModeEnabled) {
+                                Label("External display mode", systemImage: "rectangle.inset.filled.and.person.filled")
+                            }
+                            .tint(settings.accentColor)
+
+                            Toggle(isOn: $settings.autoEnterControllerOnExternalDisplay) {
+                                Text("Automatically switch phone to controller")
+                            }
+                            .tint(settings.accentColor)
+                            .disabled(!settings.tvModeEnabled)
+
+                            if appState.isPlaying {
+                                HStack {
+                                    Circle()
+                                        .fill(settings.tvModeEnabled ? .green : .orange)
+                                        .frame(width: 8, height: 8)
+                                    Text(appState.isTVModeActive ? "Controller mode active" : "Phone gameplay active")
+                                        .font(.caption.weight(.semibold))
+                                    Spacer()
+                                }
+                            }
+                        }
+
+                        settingsCard(title: "Emulator cores", icon: "cpu.fill") {
                             let cores = coreLoader.listAvailableCores()
                             if cores.isEmpty {
-                                Text("No .dylib in app yet.")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                Text("Send an ios-arm64 dylib and it gets packed into Frameworks/.")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
+                                Label("No bundled dylibs detected", systemImage: "exclamationmark.triangle")
+                                    .foregroundStyle(.orange)
                             } else {
                                 ForEach(cores, id: \.self) { name in
                                     HStack {
                                         Image(systemName: "shippingbox.fill")
                                             .foregroundStyle(settings.accentColor)
-                                        Text(name).font(.caption.monospaced())
+                                        Text(name)
+                                            .font(.caption.monospaced())
                                         Spacer()
                                     }
                                 }
                             }
-                            if let err = coreLoader.lastError {
-                                Text(err).font(.caption2).foregroundStyle(.orange)
+
+                            if let error = coreLoader.lastError {
+                                Text(error)
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
                             }
                         }
 
-                        settingsCard(title: "Display & Performance", icon: "gauge.with.dots.needle.67percent") {
-                            Toggle(isOn: $settings.showFPS) {
-                                Label("Show FPS (top-right)", systemImage: "speedometer")
-                            }
-                            .tint(settings.accentColor)
-                            Toggle(isOn: $settings.target4KWhenStable) {
-                                Label("4K when FPS stable", systemImage: "4k.tv")
-                            }
-                            .tint(settings.accentColor)
-                            Toggle(isOn: $settings.useLiquidGlass) {
-                                Label("Liquid Glass (iOS 18+/26+)", systemImage: "drop.fill")
-                            }
-                            .tint(settings.accentColor)
-                        }
-
-                        settingsCard(title: "TV / External Display", icon: "tv") {
-                            Toggle(isOn: $settings.tvModeEnabled) {
-                                Label("Enable TV Mode", systemImage: "tv.fill")
-                            }
-                            .tint(settings.accentColor)
-                            Toggle(isOn: $settings.autoEnterControllerOnExternalDisplay) {
-                                Text("Auto controller on connect")
-                            }
-                            .tint(settings.accentColor)
-                            .disabled(!settings.tvModeEnabled)
-                        }
-
-                        settingsCard(title: "About", icon: "info.circle") {
-                            LabeledContent("Version", value: "1.3.0")
-                            LabeledContent("Build", value: "4")
-                            Text("k1emu — drop cores as dylib, we package them")
+                        settingsCard(title: "About", icon: "info.circle.fill") {
+                            LabeledContent("Version", value: "1.5.0")
+                            LabeledContent("Build", value: "5")
+                            Text("K1emu")
+                                .font(.headline)
+                            Text("A clean, user-owned library with real file import, persistent settings, tweak files, live display FPS and external-display support.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+
+                            Button(role: .destructive) {
+                                showResetAlert = true
+                            } label: {
+                                Label("Reset appearance & display settings", systemImage: "arrow.counterclockwise")
+                            }
+                            .padding(.top, 4)
                         }
 
-                        Spacer(minLength: 40)
+                        Spacer(minLength: 36)
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 8)
+                    .padding(.top, 10)
                 }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .toolbarBackground(.hidden, for: .navigationBar)
+            .alert("Reset settings?", isPresented: $showResetAlert) {
+                Button("Reset", role: .destructive) { settings.resetToDefaults() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Your ROM library and tweak files will not be deleted.")
+            }
         }
     }
 
-    private var headerCard: some View {
+    private var hero: some View {
         HStack(spacing: 14) {
-            K1Logo(size: 52)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("k1emu").font(.title2.bold())
-                Text("Customize everything").font(.caption).foregroundStyle(.secondary)
+            K1Logo(size: 58)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("K1 Control Center")
+                    .font(.title2.bold())
+                Text("Everything persists between launches.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
         }
-        .padding(16)
+        .padding(18)
         .background(cardBackground)
     }
 
     private func settingsCard<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 13) {
             Label(title, systemImage: icon)
                 .font(.headline)
                 .foregroundStyle(settings.accentColor)
@@ -154,11 +190,18 @@ struct SettingsView: View {
     }
 
     private var cardBackground: some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
+        RoundedRectangle(cornerRadius: 22, style: .continuous)
             .fill(.ultraThinMaterial)
             .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(LinearGradient(colors: [.white.opacity(0.18), .white.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(
+                        LinearGradient(
+                            colors: [.white.opacity(0.18), .white.opacity(0.04)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
             )
     }
 
@@ -166,7 +209,8 @@ struct SettingsView: View {
         HStack {
             Text(title)
             Spacer()
-            ColorPicker("", selection: color, supportsOpacity: false).labelsHidden()
+            ColorPicker("", selection: color, supportsOpacity: false)
+                .labelsHidden()
         }
     }
 
@@ -176,9 +220,13 @@ struct SettingsView: View {
                 ForEach(items, id: \.0) { name, color in
                     Button { onSelect(color) } label: {
                         VStack(spacing: 4) {
-                            Circle().fill(color).frame(width: 32, height: 32)
+                            Circle()
+                                .fill(color)
+                                .frame(width: 30, height: 30)
                                 .overlay(Circle().stroke(.white.opacity(0.25), lineWidth: 1))
-                            Text(name).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                            Text(name)
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(.secondary)
                         }
                     }
                     .buttonStyle(.plain)
@@ -190,21 +238,42 @@ struct SettingsView: View {
 
 struct AnimatedBackground: View {
     @EnvironmentObject var settings: SettingsStore
+
     var body: some View {
         ZStack {
             settings.backgroundColor
+
             switch settings.backgroundEffect {
-            case .none: EmptyView()
+            case .none:
+                EmptyView()
             case .subtle:
-                RadialGradient(colors: [settings.accentColor.opacity(0.15), .clear], center: .topTrailing, startRadius: 20, endRadius: 420)
+                RadialGradient(
+                    colors: [settings.accentColor.opacity(0.18), .clear],
+                    center: .topTrailing,
+                    startRadius: 20,
+                    endRadius: 420
+                )
             case .aurora:
-                LinearGradient(colors: [settings.accentColor.opacity(0.25), Color.cyan.opacity(0.12), settings.backgroundColor], startPoint: .topLeading, endPoint: .bottomTrailing)
+                LinearGradient(
+                    colors: [settings.accentColor.opacity(0.25), .cyan.opacity(0.12), settings.backgroundColor],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
             case .mesh:
                 MeshStyleBackground(accent: settings.accentColor)
             case .particles:
-                RadialGradient(colors: [settings.accentColor.opacity(0.2), .clear], center: .center, startRadius: 10, endRadius: 500)
+                RadialGradient(
+                    colors: [settings.accentColor.opacity(0.20), .clear],
+                    center: .center,
+                    startRadius: 10,
+                    endRadius: 500
+                )
             case .liquid:
-                LinearGradient(colors: [settings.accentColor.opacity(0.18), Color.blue.opacity(0.08), settings.backgroundColor], startPoint: .topLeading, endPoint: .bottomTrailing)
+                LinearGradient(
+                    colors: [settings.accentColor.opacity(0.18), .blue.opacity(0.08), settings.backgroundColor],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
             }
         }
     }
@@ -212,11 +281,12 @@ struct AnimatedBackground: View {
 
 struct MeshStyleBackground: View {
     let accent: Color
+
     var body: some View {
         ZStack {
-            Circle().fill(accent.opacity(0.2)).frame(width: 280).blur(radius: 80).offset(x: -80, y: -120)
-            Circle().fill(Color.cyan.opacity(0.12)).frame(width: 220).blur(radius: 70).offset(x: 100, y: 80)
-            Circle().fill(Color.purple.opacity(0.15)).frame(width: 200).blur(radius: 60).offset(x: 40, y: 220)
+            Circle().fill(accent.opacity(0.20)).frame(width: 280).blur(radius: 80).offset(x: -80, y: -120)
+            Circle().fill(.cyan.opacity(0.12)).frame(width: 220).blur(radius: 70).offset(x: 100, y: 80)
+            Circle().fill(.purple.opacity(0.15)).frame(width: 200).blur(radius: 60).offset(x: 40, y: 220)
         }
     }
 }

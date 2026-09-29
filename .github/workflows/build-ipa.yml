@@ -3,6 +3,8 @@ name: Build IPA
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -22,58 +24,61 @@ jobs:
 
       - name: Generate project
         run: |
+          set -euo pipefail
           xcodegen generate
           sed -i.bak 's/objectVersion = 77;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj || true
           sed -i.bak 's/objectVersion = 60;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj || true
 
       - name: Build app
-        continue-on-error: true
-        run: xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release -destination generic/platform=iOS -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build || true
-
-      - name: Fetch cores from compiler repo
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
+          xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release \
+            -destination generic/platform=iOS -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+
+      - name: Fetch latest NDS core from private compiler
+        env:
+          GH_TOKEN: ${{ secrets.COMPILER_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
           mkdir -p Cores
-          # Download libnds.dylib built by alzscriptz/compiler
           gh release download latest-build \
             --repo alzscriptz/compiler \
             --pattern 'libnds.dylib' \
             --dir Cores \
-            --clobber || echo "libnds download skipped"
-          ls -lah Cores/ || true
-          file Cores/libnds.dylib || true
+            --clobber || echo "Compiler core unavailable; packaging continues without libnds.dylib"
+          ls -lah Cores || true
 
-      - name: Package IPA with dylibs
+      - name: Package IPA
         run: |
+          set -euo pipefail
+          rm -rf Payload
+          mkdir -p Payload
+          APP=$(find build -name k1emu.app -type d | head -1)
+          test -n "$APP"
+          cp -R "$APP" Payload/k1emu.app
           mkdir -p Payload/k1emu.app/Frameworks
-          APP=$(find build -name k1emu.app -type d | head -1 || true)
-          if [ -n "$APP" ]; then
-            cp -R "$APP" Payload/
-            mkdir -p Payload/k1emu.app/Frameworks
-          else
-            mkdir -p Payload/k1emu.app
-            cp k1emu/Info.plist Payload/k1emu.app/
-            cp -R k1emu Payload/k1emu.app/Sources
-            printf '%s\n' '#!/bin/sh' 'echo k1emu' > Payload/k1emu.app/k1emu
-            chmod +x Payload/k1emu.app/k1emu
-          fi
-          find Cores k1emu/Frameworks -name '*.dylib' 2>/dev/null | while read f; do
-            echo "Embedding $f"
-            cp "$f" Payload/k1emu.app/Frameworks/
-          done
-          ls -la Payload/k1emu.app/Frameworks/ || true
+          find Cores -name '*.dylib' -type f -maxdepth 1 -print -exec cp {} Payload/k1emu.app/Frameworks/ \;
           zip -qr k1emu.ipa Payload
-          ls -lah k1emu.ipa
+          ls -lh k1emu.ipa
 
-      - name: Publish Release v1.4.0
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k1emu-ipa
+          path: k1emu.ipa
+          if-no-files-found: error
+
+      - name: Publish release on main
+        if: github.ref == 'refs/heads/main'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "k1emu v1.4.0 - Includes libnds.dylib (arm64 iOS) from compiler repo. CoreLoader dlopens Frameworks/libnds.dylib." > notes.txt
-          if gh release view v1.4.0; then
-            gh release upload v1.4.0 k1emu.ipa --clobber
+          set -euo pipefail
+          TAG="v1.5.0"
+          NOTES="k1emu v1.5.0 — redesigned settings/home, persistent preferences, real file import, tweak files, external-display shell and live FPS HUD."
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" k1emu.ipa --clobber
           else
-            gh release create v1.4.0 k1emu.ipa --title "k1emu v1.4.0" --notes-file notes.txt
+            gh release create "$TAG" k1emu.ipa --title "k1emu v1.5.0" --notes "$NOTES"
           fi
-          gh release view v1.4.0
