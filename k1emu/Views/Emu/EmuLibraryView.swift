@@ -34,7 +34,7 @@ struct EmuLibraryView: View {
                                             Divider()
                                             Button(role: .destructive) {
                                                 withAnimation { romLibrary.delete(game) }
-                                            } label {
+                                            } label: {
                                                 Label("Delete", systemImage: "trash")
                                             }
                                         }
