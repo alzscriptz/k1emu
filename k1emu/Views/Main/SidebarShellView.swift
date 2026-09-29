@@ -30,16 +30,26 @@ struct SidebarShellView: View {
     }
 
     private var bottomDock: some View {
-        GlassEffectContainer(spacing: 12) {
-            HStack(spacing: 10) {
-                dockButton(.emu, icon: "gamecontroller.fill", label: "Emu")
-                dockButton(.tweak, icon: "slider.horizontal.3", label: "Tweaks")
-                dockButton(.settings, icon: "gearshape.fill", label: "Settings")
+        Group {
+            if #available(iOS 26.0, *) {
+                GlassEffectContainer(spacing: 12) {
+                    dockContent
+                }
+            } else {
+                dockContent
             }
-            .padding(9)
-            .liquidGlass()
-            .shadow(color: .black.opacity(0.28), radius: 24, y: 12)
         }
+    }
+
+    private var dockContent: some View {
+        HStack(spacing: 10) {
+            dockButton(.emu, icon: "gamecontroller.fill", label: "Emu")
+            dockButton(.tweak, icon: "slider.horizontal.3", label: "Tweaks")
+            dockButton(.settings, icon: "gearshape.fill", label: "Settings")
+        }
+        .padding(9)
+        .liquidGlass()
+        .shadow(color: .black.opacity(0.28), radius: 24, y: 12)
     }
 
     private func dockButton(_ tab: AppState.Tab, icon: String, label: String) -> some View {
