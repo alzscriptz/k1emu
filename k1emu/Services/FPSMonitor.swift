@@ -3,7 +3,6 @@ import QuartzCore
 import Combine
 
 /// Measures real display callback cadence. It never fabricates FPS values.
-@MainActor
 final class FPSMonitor: NSObject, ObservableObject {
     static let shared = FPSMonitor()
 
@@ -13,6 +12,7 @@ final class FPSMonitor: NSObject, ObservableObject {
     private var frameCount = 0
     private var windowStart: CFTimeInterval = 0
 
+    @MainActor
     func start() {
         stop()
         frameCount = 0
@@ -28,6 +28,7 @@ final class FPSMonitor: NSObject, ObservableObject {
         displayLink = link
     }
 
+    @MainActor
     func stop() {
         displayLink?.invalidate()
         displayLink = nil
@@ -36,6 +37,7 @@ final class FPSMonitor: NSObject, ObservableObject {
         fps = 0
     }
 
+    @MainActor
     @objc private func tick(_ link: CADisplayLink) {
         if windowStart == 0 {
             windowStart = link.timestamp

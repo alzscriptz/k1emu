@@ -6,6 +6,7 @@ final class TweakStore: ObservableObject {
     @Published var tweaks: [TweakItem] = []
 
     private let fileManager = FileManager.default
+
     private var documentsURL: URL {
         fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
@@ -20,64 +21,18 @@ final class TweakStore: ObservableObject {
         return url
     }
 
-    /// Real files are created in Documents/Tweaks so custom tweaks are not just UI entries.
+    /// Presets are real tweak files. Their payload is intentionally a safe
+    /// template because cheat addresses are game-specific; imported game codes
+    /// are stored and selectable without inventing a working code.
     static let presets: [TweakItem] = [
-        TweakItem(
-            name: "Infinite Lives",
-            description: "Libretro-style cheat template. Add the game's code before loading.",
-            system: "All",
-            fileName: "infinite_lives.cht",
-            content: "# k1emu cheat preset\n# Add a game-specific code below.\n"
-        ),
-        TweakItem(
-            name: "Infinite Health",
-            description: "Libretro-style cheat template. Add the game's code before loading.",
-            system: "All",
-            fileName: "infinite_health.cht",
-            content: "# k1emu cheat preset\n# Add a game-specific code below.\n"
-        ),
-        TweakItem(
-            name: "Max Money / Score",
-            description: "Libretro-style cheat template for a game-specific value.",
-            system: "All",
-            fileName: "max_money_score.cht",
-            content: "# k1emu cheat preset\n# Add a game-specific code below.\n"
-        ),
-        TweakItem(
-            name: "Unlock All Levels",
-            description: "Game-specific unlock template.",
-            system: "All",
-            fileName: "unlock_all_levels.cht",
-            content: "# k1emu cheat preset\n# Add a game-specific code below.\n"
-        ),
-        TweakItem(
-            name: "Moon Jump",
-            description: "Game-specific movement template.",
-            system: "N64",
-            fileName: "moon_jump.cht",
-            content: "# k1emu cheat preset\n# Add a game-specific code below.\n"
-        ),
-        TweakItem(
-            name: "Walk Through Walls",
-            description: "Game-specific collision template.",
-            system: "All",
-            fileName: "walk_through_walls.cht",
-            content: "# k1emu cheat preset\n# Add a game-specific code below.\n"
-        ),
-        TweakItem(
-            name: "One-Hit KO",
-            description: "Game-specific damage template.",
-            system: "All",
-            fileName: "one_hit_ko.cht",
-            content: "# k1emu cheat preset\n# Add a game-specific code below.\n"
-        ),
-        TweakItem(
-            name: "Invincibility",
-            description: "Game-specific damage template.",
-            system: "All",
-            fileName: "invincibility.cht",
-            content: "# k1emu cheat preset\n# Add a game-specific code below.\n"
-        )
+        TweakItem(name: "Infinite Lives", description: "Game-specific cheat template", system: "All", fileName: "infinite_lives.cht", content: "# k1emu cheat preset\n# Add the game's code below.\n"),
+        TweakItem(name: "Infinite Health", description: "Game-specific cheat template", system: "All", fileName: "infinite_health.cht", content: "# k1emu cheat preset\n# Add the game's code below.\n"),
+        TweakItem(name: "Max Money / Score", description: "Game-specific value template", system: "All", fileName: "max_money_score.cht", content: "# k1emu cheat preset\n# Add the game's code below.\n"),
+        TweakItem(name: "Unlock All Levels", description: "Game-specific unlock template", system: "All", fileName: "unlock_all_levels.cht", content: "# k1emu cheat preset\n# Add the game's code below.\n"),
+        TweakItem(name: "Moon Jump", description: "Game-specific movement template", system: "N64", fileName: "moon_jump.cht", content: "# k1emu cheat preset\n# Add the game's code below.\n"),
+        TweakItem(name: "Walk Through Walls", description: "Game-specific collision template", system: "All", fileName: "walk_through_walls.cht", content: "# k1emu cheat preset\n# Add the game's code below.\n"),
+        TweakItem(name: "One-Hit KO", description: "Game-specific damage template", system: "All", fileName: "one_hit_ko.cht", content: "# k1emu cheat preset\n# Add the game's code below.\n"),
+        TweakItem(name: "Invincibility", description: "Game-specific damage template", system: "All", fileName: "invincibility.cht", content: "# k1emu cheat preset\n# Add the game's code below.\n")
     ]
 
     init() {
@@ -127,8 +82,8 @@ final class TweakStore: ObservableObject {
     }
 
     private func writeFile(for tweak: TweakItem) {
-        let url = fileURL(for: tweak)
-        try? tweak.content.data(using: .utf8)?.write(to: url, options: .atomic)
+        guard let data = tweak.content.data(using: .utf8) else { return }
+        try? data.write(to: fileURL(for: tweak), options: .atomic)
     }
 
     var customTweaks: [TweakItem] {
