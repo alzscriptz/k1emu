@@ -269,7 +269,21 @@ struct AddTweakSheet: View {
             }
 
             do {
-                content = try String(contentsOf: url, encoding: .utf8)
+                // Copy the external provider file into our sandbox first so
+                // the editor never depends on a security-scoped URL later.
+                let tempURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(UUID().uuidString)
+                    .appendingPathExtension(url.pathExtension.isEmpty ? "txt" : url.pathExtension)
+                defer { try? FileManager.default.removeItem(at: tempURL) }
+
+                do {
+                    try FileManager.default.copyItem(at: url, to: tempURL)
+                } catch {
+                    let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+                    try data.write(to: tempURL, options: .atomic)
+                }
+
+                content = try String(contentsOf: tempURL, encoding: .utf8)
                 if fileName.isEmpty {
                     fileName = url.lastPathComponent
                 }
@@ -278,7 +292,7 @@ struct AddTweakSheet: View {
                 }
                 error = nil
             } catch {
-                self.error = "Could not read this tweak as UTF-8 text. Try a text-based .cht/.txt/.ini file."
+                self.error = "Could not import this tweak file. Try a text-based .cht/.txt/.ini file."
             }
 
         case .failure(let error):
