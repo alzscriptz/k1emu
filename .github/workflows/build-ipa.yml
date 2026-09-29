@@ -50,10 +50,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "k1emu v1.0.0 - sideload with AltStore/SideStore/TrollStore" > notes.txt
-          if gh release view v1.0.0; then
-            gh release upload v1.0.0 k1emu.ipa --clobber
+          echo "k1emu v1.1.0 - Premium UI, empty home, fixed file picker, real tweaks, FPS, logo. Sideload with AltStore/SideStore/TrollStore." > notes.txt
+          if gh release view v1.1.0; then
+            gh release upload v1.1.0 k1emu.ipa --clobber
           else
-            gh release create v1.0.0 k1emu.ipa --title "k1emu v1.0.0" --notes-file notes.txt
+            gh release create v1.1.0 k1emu.ipa --title "k1emu v1.1.0" --notes-file notes.txt
           fi
-          gh release view v1.0.0
+          gh release view v1.1.0
