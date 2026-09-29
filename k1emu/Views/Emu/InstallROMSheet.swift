@@ -42,7 +42,7 @@ struct InstallROMSheet: View {
                     }
 
                     if installMode == .file {
-                        Section("ROM file") {
+                        Section {
                             Button {
                                 errorMessage = nil
                                 isImporting = true
@@ -67,6 +67,8 @@ struct InstallROMSheet: View {
                                 .padding(.vertical, 6)
                             }
                             .buttonStyle(.plain)
+                        } header: {
+                            Text("ROM file")
                         } footer: {
                             Text("The picker accepts generic data so .nds, .gba, .n64, .nes, archives and future ROM formats are not hidden.")
                         }
