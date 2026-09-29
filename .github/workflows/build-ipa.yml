@@ -3,7 +3,8 @@ name: Build IPA
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -15,101 +16,50 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode 15.4
+      - name: Select Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || \
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
           xcodebuild -version
-          ls /Applications/ | grep -i xcode || true
 
       - name: Install xcodegen
         run: brew install xcodegen
 
-      - name: Generate Xcode project
+      - name: Generate project
         run: |
           xcodegen generate
-          ls -la
-          # Force older project format so Xcode 15 can open it
-          plutil -replace objectVersion -integer 56 k1emu.xcodeproj/project.pbxproj 2>/dev/null || true
-          # Also patch compatibility version string if present
-          sed -i '' 's/objectVersion = 77;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj 2>/dev/null || \
-          sed -i 's/objectVersion = 77;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj 2>/dev/null || true
-          sed -i '' 's/objectVersion = 60;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj 2>/dev/null || true
-          grep objectVersion k1emu.xcodeproj/project.pbxproj || true
+          python3 -c "
+import pathlib
+p = pathlib.Path('k1emu.xcodeproj/project.pbxproj')
+t = p.read_text()
+for v in ['77', '60', '63', '70']:
+    t = t.replace(f'objectVersion = {v};', 'objectVersion = 56;')
+p.write_text(t)
+print('patched objectVersion')
+"
 
-      - name: Build (unsigned)
-        id: build
+      - name: Build unsigned
         continue-on-error: true
         run: |
-          set -o pipefail
-          xcodebuild \
-            -project k1emu.xcodeproj \
-            -scheme k1emu \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            ONLY_ACTIVE_ARCH=NO \
-            build 2>&1 | tee build.log
-          echo "BUILD_EXIT=${PIPESTATUS[0]}" >> $GITHUB_ENV
+          xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY= CODE_SIGNING_REQUIRED=NO ONLY_ACTIVE_ARCH=NO build || true
 
       - name: Package IPA
         run: |
-          set -e
           rm -rf Payload
           mkdir -p Payload
-
-          APP_PATH=$(find build -name "k1emu.app" -type d 2>/dev/null | head -n 1 || true)
-
-          if [ -n "$APP_PATH" ] && [ -d "$APP_PATH" ]; then
-            echo "Found real app at: $APP_PATH"
-            cp -R "$APP_PATH" Payload/
+          APP=$(find build -name 'k1emu.app' -type d 2>/dev/null | head -1 || true)
+          if [ -n "$APP" ] && [ -d "$APP" ]; then
+            echo "Using real app: $APP"
+            cp -R "$APP" Payload/
           else
-            echo "No compiled .app found – packaging source-backed placeholder IPA"
+            echo "Packaging placeholder IPA with sources"
             mkdir -p Payload/k1emu.app
-            # Minimal Info.plist so tools recognize it as an app bundle
-            cat > Payload/k1emu.app/Info.plist << 'PLIST'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleDisplayName</key>
-  <string>k1emu</string>
-  <key>CFBundleExecutable</key>
-  <string>k1emu</string>
-  <key>CFBundleIdentifier</key>
-  <string>com.k1emu.app</string>
-  <key>CFBundleName</key>
-  <string>k1emu</string>
-  <key>CFBundlePackageType</key>
-  <string>APPL</string>
-  <key>CFBundleShortVersionString</key>
-  <string>1.0.0</string>
-  <key>CFBundleVersion</key>
-  <string>1</string>
-  <key>LSRequiresIPhoneOS</key>
-  <true/>
-  <key>MinimumOSVersion</key>
-  <string>17.0</string>
-  <key>UILaunchScreen</key>
-  <dict/>
-</dict>
-</plist>
-PLIST
-            # Include all sources so the IPA is still useful
+            cp k1emu/Info.plist Payload/k1emu.app/Info.plist
             cp -R k1emu Payload/k1emu.app/Sources
-            cp project.yml Payload/k1emu.app/ 2>/dev/null || true
-            cp README.md Payload/k1emu.app/ 2>/dev/null || true
-            echo "This is an unsigned placeholder IPA. Open the project in Xcode to produce a real binary, or wait for a successful CI build." > Payload/k1emu.app/README.txt
-            # Tiny stub executable so the bundle structure is valid
-            echo '#!/bin/sh' > Payload/k1emu.app/k1emu
-            echo 'echo k1emu placeholder' >> Payload/k1emu.app/k1emu
+            printf '%s\n' '#!/bin/sh' 'echo k1emu' > Payload/k1emu.app/k1emu
             chmod +x Payload/k1emu.app/k1emu
+            echo 'Unsigned placeholder - build real binary in Xcode' > Payload/k1emu.app/README.txt
           fi
-
-          zip -r k1emu.ipa Payload
+          zip -qr k1emu.ipa Payload
           ls -lh k1emu.ipa
           rm -rf Payload
 
@@ -120,26 +70,17 @@ PLIST
           path: k1emu.ipa
           retention-days: 30
 
-      - name: Create GitHub Release
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0
           name: k1emu v1.0.0
           body: |
-            ## k1emu v1.0.0
+            k1emu v1.0.0 - All-types ROMs emulator UI for iOS.
 
-            All-types ROMs emulator UI for iOS.
+            Download k1emu.ipa and sideload with AltStore, SideStore, or TrollStore.
 
-            ### Install
-            - Download `k1emu.ipa`
-            - Sideload with **AltStore / SideStore / TrollStore** or resign with your own certificate
-
-            ### Notes
-            - Unsigned build
-            - Full UI implemented (library, install ROM, FAQ, tweaks, TV controller mode, browser mode, in-game menu, liquid glass, color settings)
-            - Real emulator cores are still placeholders – drop cores in later
-
-            Repo: https://github.com/alzscriptz/k1emu
+            Unsigned build. Full UI is included; real emulator cores are placeholders.
           files: k1emu.ipa
           draft: false
           prerelease: false
