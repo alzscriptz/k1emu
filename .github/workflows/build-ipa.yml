@@ -25,56 +25,45 @@ jobs:
           xcodegen generate
           sed -i.bak 's/objectVersion = 77;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj || true
           sed -i.bak 's/objectVersion = 60;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj || true
-          sed -i.bak 's/objectVersion = 63;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj || true
 
       - name: Build
         continue-on-error: true
         run: xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release -destination generic/platform=iOS -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build || true
 
-      - name: Make IPA
+      - name: Make IPA and publish Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p Payload dist
+          mkdir -p Payload
           APP=$(find build -name k1emu.app -type d | head -1 || true)
           if [ -n "$APP" ]; then
             echo "Found app: $APP"
             cp -R "$APP" Payload/
           else
-            echo "No app binary - packaging sources placeholder"
+            echo "No binary - packaging placeholder with sources"
             mkdir -p Payload/k1emu.app
             cp k1emu/Info.plist Payload/k1emu.app/
             cp -R k1emu Payload/k1emu.app/Sources
             echo '#!/bin/sh' > Payload/k1emu.app/k1emu
             chmod +x Payload/k1emu.app/k1emu
           fi
-          zip -qr dist/k1emu.ipa Payload
-          ls -lah dist/
-          file dist/k1emu.ipa
-          pwd
+          zip -qr k1emu.ipa Payload
+          ls -lah k1emu.ipa
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: k1emu-ipa
-          path: dist/k1emu.ipa
-          if-no-files-found: warn
+          # Create or update release and upload IPA
+          if gh release view v1.0.0 >/dev/null 2>&1; then
+            echo "Release v1.0.0 exists - uploading asset"
+            gh release upload v1.0.0 k1emu.ipa --clobber
+          else
+            echo "Creating release v1.0.0"
+            gh release create v1.0.0 k1emu.ipa \
+              --title "k1emu v1.0.0" \
+              --notes "k1emu v1.0.0 - All-types ROMs emulator UI for iOS.
 
-      - name: Create GitHub Release with IPA
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v1.0.0
-          name: k1emu v1.0.0
-          body: |
-            **k1emu v1.0.0**
+Download k1emu.ipa and sideload with AltStore, SideStore, or TrollStore.
 
-            All-types ROMs emulator UI for iOS.
+Unsigned build. Full UI included; real cores are placeholders."
+          fi
 
-            ### Install
-            1. Download `k1emu.ipa` below
-            2. Sideload with AltStore, SideStore, or TrollStore
-
-            Unsigned build. Full UI is included.
-          files: dist/k1emu.ipa
-          fail_on_unmatched_files: false
-          make_latest: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          echo "Done. Release URL:"
+          gh release view v1.0.0 --json url -q .url
