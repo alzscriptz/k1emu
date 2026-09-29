@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct InstallROMSheet: View {
@@ -21,12 +22,6 @@ struct InstallROMSheet: View {
     }
 
     let systems = ["NDS", "GBA", "GB", "GBC", "NES", "SNES", "N64", "PS1", "Genesis", "SMS", "PCE", "Other"]
-
-    // Keep ZIP explicitly listed so Files treats downloaded .zip ROM packages as selectable.
-    // .data remains as a fallback for ROM extensions that iOS does not have a built-in UTType for.
-    private var allowedTypes: [UTType] {
-        [.item, .zip, .data]
-    }
 
     var body: some View {
         NavigationStack {
@@ -132,12 +127,17 @@ struct InstallROMSheet: View {
                     Button("Cancel") { dismiss() }
                 }
             }
-            .fileImporter(
-                isPresented: $isImporting,
-                allowedContentTypes: allowedTypes,
-                allowsMultipleSelection: false
-            ) { result in
-                handleImport(result)
+            .sheet(isPresented: $isImporting) {
+                ROMDocumentPicker(
+                    onPick: { url in
+                        isImporting = false
+                        handleImportedURL(url)
+                    },
+                    onCancel: {
+                        isImporting = false
+                    }
+                )
+                .ignoresSafeArea()
             }
         }
         .presentationDetents([.medium, .large])
@@ -151,46 +151,35 @@ struct InstallROMSheet: View {
         return selectedFileName != nil
     }
 
-    private func handleImport(_ result: Result<[URL], Error>) {
-        switch result {
-        case .success(let urls):
-            guard let url = urls.first else {
-                errorMessage = "No file was selected."
-                return
+    private func handleImportedURL(_ url: URL) {
+        let access = url.startAccessingSecurityScopedResource()
+        defer {
+            if access {
+                url.stopAccessingSecurityScopedResource()
             }
+        }
 
-            let access = url.startAccessingSecurityScopedResource()
-            defer {
-                if access {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
+        let fileName = url.lastPathComponent
+        let ext = url.pathExtension.lowercased()
 
-            let fileName = url.lastPathComponent
-            let ext = url.pathExtension.lowercased()
+        selectedFileName = fileName
+        if nameText.isEmpty {
+            nameText = url.deletingPathExtension().lastPathComponent
+        }
+        if let detected = detectSystem(ext: ext) {
+            system = detected
+        }
 
-            selectedFileName = fileName
-            if nameText.isEmpty {
-                nameText = url.deletingPathExtension().lastPathComponent
-            }
-            if let detected = detectSystem(ext: ext) {
-                system = detected
-            }
-
-            do {
-                _ = try romLibrary.importROM(
-                    from: url,
-                    name: nameText.isEmpty ? nil : nameText,
-                    system: system
-                )
-                dismiss()
-            } catch {
-                errorMessage = error.localizedDescription
-                selectedFileName = nil
-            }
-
-        case .failure(let error):
-            errorMessage = "File picker failed: \(error.localizedDescription)"
+        do {
+            _ = try romLibrary.importROM(
+                from: url,
+                name: nameText.isEmpty ? nil : nameText,
+                system: system
+            )
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+            selectedFileName = nil
         }
     }
 
@@ -232,6 +221,49 @@ struct InstallROMSheet: View {
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct ROMDocumentPicker: UIViewControllerRepresentable {
+    let onPick: (URL) -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPick: onPick, onCancel: onCancel)
+    }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(
+            forOpeningContentTypes: [.item, .data, .zip],
+            asCopy: true
+        )
+        picker.allowsMultipleSelection = false
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onPick: (URL) -> Void
+        let onCancel: () -> Void
+
+        init(onPick: @escaping (URL) -> Void, onCancel: @escaping () -> Void) {
+            self.onPick = onPick
+            self.onCancel = onCancel
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            guard let url = urls.first else {
+                onCancel()
+                return
+            }
+            onPick(url)
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            onCancel()
         }
     }
 }
