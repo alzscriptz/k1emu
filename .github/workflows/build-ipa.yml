@@ -30,12 +30,13 @@ jobs:
         continue-on-error: true
         run: xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release -destination generic/platform=iOS -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build || true
 
-      - name: Package IPA
+      - name: Package IPA with dylibs
         run: |
-          mkdir -p Payload
+          mkdir -p Payload/k1emu.app/Frameworks
           APP=$(find build -name k1emu.app -type d | head -1 || true)
           if [ -n "$APP" ]; then
             cp -R "$APP" Payload/
+            mkdir -p Payload/k1emu.app/Frameworks
           else
             mkdir -p Payload/k1emu.app
             cp k1emu/Info.plist Payload/k1emu.app/
@@ -43,6 +44,11 @@ jobs:
             echo '#!/bin/sh' > Payload/k1emu.app/k1emu
             chmod +x Payload/k1emu.app/k1emu
           fi
+          find Cores k1emu/Frameworks -name '*.dylib' 2>/dev/null | while read f; do
+            echo "Embedding $f"
+            cp "$f" Payload/k1emu.app/Frameworks/
+          done
+          ls -la Payload/k1emu.app/Frameworks/ || true
           zip -qr k1emu.ipa Payload
           ls -lah k1emu.ipa
 
@@ -50,10 +56,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "k1emu v1.2.0 - Sidebar nav, on-phone game+controller split, fixed .nds file picker. Sideload with AltStore/SideStore/TrollStore." > notes.txt
-          if gh release view v1.2.0; then
-            gh release upload v1.2.0 k1emu.ipa --clobber
+          echo "k1emu v1.3.0 - CoreLoader for dylibs. Drop ios-arm64 .dylib in Cores/ and it packs into Frameworks/." > notes.txt
+          if gh release view v1.3.0; then
+            gh release upload v1.3.0 k1emu.ipa --clobber
           else
-            gh release create v1.2.0 k1emu.ipa --title "k1emu v1.2.0" --notes-file notes.txt
+            gh release create v1.3.0 k1emu.ipa --title "k1emu v1.3.0" --notes-file notes.txt
           fi
-          gh release view v1.2.0
+          gh release view v1.3.0
