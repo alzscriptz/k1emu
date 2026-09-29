@@ -5,6 +5,8 @@ struct TweakLoaderView: View {
     @EnvironmentObject var tweakStore: TweakStore
     @EnvironmentObject var settings: SettingsStore
     @State private var showAdd = false
+    @State private var showPresets = false
+    @State private var showMine = false
     @State private var editingTweak: TweakItem?
 
     var body: some View {
@@ -13,40 +15,122 @@ struct TweakLoaderView: View {
                 AnimatedBackground().ignoresSafeArea()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        HStack(spacing: 14) {
-                            K1Logo(size: 46)
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Tweak Lab").font(.title2.bold())
-                                Text("Real files • presets • imports").font(.caption).foregroundStyle(.secondary)
+                                Text("Tweak Lab")
+                                    .font(.system(size: 30, weight: .black, design: .rounded))
+                                Text("Tune your games")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
                             }
                             Spacer()
                             Button {
                                 editingTweak = nil
                                 showAdd = true
                             } label: {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.title2)
-                                    .foregroundStyle(settings.accentColor)
+                                Image(systemName: "plus")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 42, height: 42)
+                                    .background(settings.accentColor, in: Circle())
                             }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 6)
+                        .padding(.bottom, 4)
 
-                        sectionTitle("Preset library", icon: "sparkles")
-                        ForEach(tweakStore.presetTweaks) { tweak in
-                            TweakRow(tweak: tweak, isPreset: true)
-                                .padding(.horizontal, 16)
+                        Button { showPresets = true } label: {
+                            labRow(icon: "star.fill", title: "Preset Tweaks", subtitle: "Built-in presets")
                         }
+                        .buttonStyle(.plain)
+
+                        Button { showMine = true } label: {
+                            labRow(icon: "doc.text.fill", title: "My Tweaks", subtitle: "Manage your tweaks")
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            editingTweak = nil
+                            showAdd = true
+                        } label: {
+                            labRow(icon: "plus.circle.fill", title: "Add Tweak", subtitle: "Import or create")
+                        }
+                        .buttonStyle(.plain)
 
                         if !tweakStore.customTweaks.isEmpty {
-                            sectionTitle("Your tweaks", icon: "wrench.and.screwdriver.fill")
-                            ForEach(tweakStore.customTweaks) { tweak in
+                            Text("Recently added")
+                                .font(.headline)
+                                .padding(.top, 8)
+                            ForEach(tweakStore.customTweaks.prefix(3)) { tweak in
                                 TweakRow(tweak: tweak, isPreset: false)
-                                    .padding(.horizontal, 16)
-                                    .contextMenu {
+                            }
+                        }
+
+                        Spacer(minLength: 100)
+                    }
+                    .padding(16)
+                }
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showAdd, onDismiss: { editingTweak = nil }) {
+                AddTweakSheet(tweak: editingTweak)
+            }
+            .sheet(isPresented: $showPresets) {
+                TweakListSheet(title: "Preset Tweaks", tweaks: tweakStore.presetTweaks, canEdit: false)
+            }
+            .sheet(isPresented: $showMine) {
+                TweakListSheet(title: "My Tweaks", tweaks: tweakStore.customTweaks, canEdit: true)
+            }
+        }
+    }
+
+    private func labRow(icon: String, title: String, subtitle: String) -> some View {
+        HStack(spacing: 15) {
+            Image(systemName: icon)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(settings.accentColor)
+                .frame(width: 34)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.headline)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 76)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.12), lineWidth: 1))
+    }
+}
+
+struct TweakListSheet: View {
+    let title: String
+    let tweaks: [TweakItem]
+    let canEdit: Bool
+    @EnvironmentObject var tweakStore: TweakStore
+    @EnvironmentObject var settings: SettingsStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var editing: TweakItem?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    if tweaks.isEmpty {
+                        ContentUnavailableView("No tweaks yet", systemImage: "slider.horizontal.3")
+                    } else {
+                        ForEach(tweaks) { tweak in
+                            TweakRow(tweak: tweak, isPreset: !canEdit)
+                                .contextMenu {
+                                    if canEdit {
                                         Button {
-                                            editingTweak = tweak
-                                            showAdd = true
+                                            editing = tweak
                                         } label: {
                                             Label("Edit", systemImage: "pencil")
                                         }
@@ -56,43 +140,22 @@ struct TweakLoaderView: View {
                                             Label("Delete", systemImage: "trash")
                                         }
                                     }
-                            }
+                                }
                         }
-
-                        Button {
-                            editingTweak = nil
-                            showAdd = true
-                        } label: {
-                            Label("Import / Create Tweak", systemImage: "plus")
-                                .font(.headline)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 15)
-                                .background(settings.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 16))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 16)
-                                        .stroke(settings.accentColor.opacity(0.45), lineWidth: 1)
-                                )
-                                .foregroundStyle(settings.accentColor)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 100)
                     }
-                    .padding(.top, 10)
+                }
+                .padding(16)
+            }
+            .background(AnimatedBackground().ignoresSafeArea())
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
-            .sheet(isPresented: $showAdd, onDismiss: { editingTweak = nil }) {
-                AddTweakSheet(tweak: editingTweak)
-            }
+            .sheet(item: $editing) { AddTweakSheet(tweak: $0) }
         }
-    }
-
-    private func sectionTitle(_ text: String, icon: String) -> some View {
-        Label(text, systemImage: icon)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(settings.accentColor)
-            .padding(.horizontal, 16)
-            .padding(.top, 6)
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -129,10 +192,7 @@ struct TweakRow: View {
         }
         .padding(12)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 17, style: .continuous)
-                .stroke(.white.opacity(0.08), lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: 17).stroke(.white.opacity(0.08), lineWidth: 1))
     }
 }
 
@@ -172,14 +232,12 @@ struct AddTweakSheet: View {
                     TextField("Name", text: $name)
                     TextField("Description", text: $description)
                     Picker("System", selection: $system) {
-                        ForEach(systems, id: \.self) { item in Text(item) }
+                        ForEach(systems, id: \.self) { Text($0) }
                     }
                     TextField("File name", text: $fileName)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
                 }
 
-                Section {
+                Section("Tweak payload") {
                     Button {
                         error = nil
                         importing = true
@@ -190,30 +248,18 @@ struct AddTweakSheet: View {
 
                     TextEditor(text: $content)
                         .font(.system(.footnote, design: .monospaced))
-                        .frame(minHeight: 180)
-                        .scrollContentBackground(.hidden)
-                } header: {
-                    Text("Tweak payload")
-                } footer: {
-                    Text("Choose a text cheat/tweak file, or paste its payload below.")
+                        .frame(minHeight: 190)
                 }
 
                 if let error {
-                    Section {
-                        Text(error).foregroundStyle(.red)
-                    }
+                    Text(error).foregroundStyle(.red)
                 }
             }
-            .navigationTitle(tweak == nil ? "Tweak Builder" : "Edit Tweak")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(tweak == nil ? "Add Tweak" : "Edit Tweak")
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .disabled(!canSave)
-                        .fontWeight(.semibold)
+                    Button("Save") { save() }.disabled(!canSave)
                 }
             }
             .fileImporter(
@@ -229,11 +275,8 @@ struct AddTweakSheet: View {
     }
 
     private func save() {
-        let safeName = fileName.isEmpty
-            ? name.lowercased().replacingOccurrences(of: " ", with: "_")
-            : fileName
+        let safeName = fileName.isEmpty ? name.lowercased().replacingOccurrences(of: " ", with: "_") : fileName
         let finalName = safeName.contains(".") ? safeName : safeName + ".cht"
-
         let value = TweakItem(
             id: tweak?.id ?? UUID(),
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -244,57 +287,25 @@ struct AddTweakSheet: View {
             dateAdded: tweak?.dateAdded ?? Date(),
             isEnabled: tweak?.isEnabled ?? true
         )
-
-        if tweak == nil {
-            tweakStore.add(value)
-        } else {
-            tweakStore.update(value)
-        }
+        tweak == nil ? tweakStore.add(value) : tweakStore.update(value)
         dismiss()
     }
 
     private func importFile(_ result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
-            guard let url = urls.first else {
-                error = "No tweak file was selected."
-                return
-            }
-
+            guard let url = urls.first else { error = "No tweak file was selected."; return }
             let access = url.startAccessingSecurityScopedResource()
-            defer {
-                if access {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-
+            defer { if access { url.stopAccessingSecurityScopedResource() } }
             do {
-                // Copy the external provider file into our sandbox first so
-                // the editor never depends on a security-scoped URL later.
-                let tempURL = FileManager.default.temporaryDirectory
-                    .appendingPathComponent(UUID().uuidString)
-                    .appendingPathExtension(url.pathExtension.isEmpty ? "txt" : url.pathExtension)
-                defer { try? FileManager.default.removeItem(at: tempURL) }
-
-                do {
-                    try FileManager.default.copyItem(at: url, to: tempURL)
-                } catch {
-                    let data = try Data(contentsOf: url, options: [.mappedIfSafe])
-                    try data.write(to: tempURL, options: .atomic)
-                }
-
-                content = try String(contentsOf: tempURL, encoding: .utf8)
-                if fileName.isEmpty {
-                    fileName = url.lastPathComponent
-                }
-                if name.isEmpty {
-                    name = url.deletingPathExtension().lastPathComponent
-                }
+                let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+                content = String(decoding: data, as: UTF8.self)
+                if fileName.isEmpty { fileName = url.lastPathComponent }
+                if name.isEmpty { name = url.deletingPathExtension().lastPathComponent }
                 error = nil
             } catch {
-                self.error = "Could not import this tweak file. Try a text-based .cht/.txt/.ini file."
+                self.error = "Could not import this tweak file."
             }
-
         case .failure(let error):
             self.error = "Import failed: \(error.localizedDescription)"
         }
@@ -309,9 +320,7 @@ struct TweakPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var compatibleTweaks: [TweakItem] {
-        tweakStore.tweaks.filter {
-            $0.isEnabled && ($0.system == "All" || $0.system.caseInsensitiveCompare(game.system) == .orderedSame)
-        }
+        tweakStore.tweaks.filter { $0.isEnabled && ($0.system == "All" || $0.system.caseInsensitiveCompare(game.system) == .orderedSame) }
     }
 
     var body: some View {
@@ -323,14 +332,11 @@ struct TweakPickerSheet: View {
                     romLibrary.update(g)
                     appState.loadedTweakName = nil
                     dismiss()
-                } label: {
-                    Label("None (clear)", systemImage: "xmark.circle")
-                }
+                } label: { Label("None (clear)", systemImage: "xmark.circle") }
 
                 Section("Compatible tweaks") {
                     if compatibleTweaks.isEmpty {
-                        Text("No compatible tweaks yet.")
-                            .foregroundStyle(.secondary)
+                        Text("No compatible tweaks yet.").foregroundStyle(.secondary)
                     } else {
                         ForEach(compatibleTweaks) { item in
                             Button {
@@ -341,11 +347,9 @@ struct TweakPickerSheet: View {
                                 dismiss()
                             } label: {
                                 HStack {
-                                    VStack(alignment: .leading, spacing: 3) {
+                                    VStack(alignment: .leading) {
                                         Text(item.name)
-                                        Text(item.fileName)
-                                            .font(.caption2.monospaced())
-                                            .foregroundStyle(.secondary)
+                                        Text(item.fileName).font(.caption2.monospaced()).foregroundStyle(.secondary)
                                     }
                                     Spacer()
                                     if game.appliedTweakID == item.id {
@@ -358,14 +362,7 @@ struct TweakPickerSheet: View {
                 }
             }
             .navigationTitle("Load Tweak")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
         }
         .presentationDetents([.medium, .large])
-        .preferredColorScheme(.dark)
     }
 }
