@@ -22,14 +22,7 @@ final class ROMLibrary: ObservableObject {
 
     init() {
         load()
-        // Seed a couple of demo entries so the UI is never empty on first launch
-        if games.isEmpty {
-            games = [
-                GameItem(name: "Super Demo Kart", system: "N64", fileName: "demo.n64", notes: "Demo entry – replace with real ROM"),
-                GameItem(name: "Pixel Quest", system: "NES", fileName: "demo.nes", notes: "Demo entry")
-            ]
-            save()
-        }
+        // Empty by default — only show what the user adds
     }
 
     func load() {
@@ -47,8 +40,17 @@ final class ROMLibrary: ObservableObject {
         var destURL: URL? = nil
         if let source = sourceURL {
             let dest = romsDirectory.appendingPathComponent(fileName)
-            try? fileManager.copyItem(at: source, to: dest)
-            destURL = dest
+            try? fileManager.removeItem(at: dest)
+            do {
+                try fileManager.copyItem(at: source, to: dest)
+                destURL = dest
+            } catch {
+                // Fallback: try reading data and writing
+                if let data = try? Data(contentsOf: source) {
+                    try? data.write(to: dest)
+                    destURL = dest
+                }
+            }
         }
         let game = GameItem(name: name, system: system, fileName: fileName, fileURL: destURL)
         games.insert(game, at: 0)
