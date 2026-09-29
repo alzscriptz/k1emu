@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// Sketch layouts:
-/// - showGamePanel true  = ON PHONE MODE (game screen embedded + controls)
-/// - showGamePanel false = ON TV MODE (full controller only, game is on TV)
+/// showGamePanel true  = ON PHONE MODE (game + controls)
+/// showGamePanel false = ON TV MODE (controller only)
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -25,7 +24,6 @@ struct ControllerView: View {
                 onTVLayout
             }
 
-            // FPS always top-right
             VStack {
                 HStack {
                     Spacer()
@@ -47,30 +45,21 @@ struct ControllerView: View {
         .persistentSystemOverlays(.hidden)
     }
 
-    // MARK: - ON PHONE MODE (sketch bottom-right)
-    // Game panel on the right/top area, controller around it
     private var onPhoneLayout: some View {
         VStack(spacing: 0) {
-            // Top bar: menu | windows | windows | browser | quit
             topBar
 
-            // Main row: left controls | GAME PANEL | right controls
             HStack(alignment: .center, spacing: 6) {
-                // Left: D-pad + left stick
                 VStack(spacing: 16) {
-                    DPadView(accent: settings.joystickAccent)
-                        .scaleEffect(0.9)
-                    AnalogStickView(offset: $leftStick, accent: settings.joystickAccent)
-                        .scaleEffect(0.85)
+                    DPadView(accent: settings.joystickAccent).scaleEffect(0.9)
+                    AnalogStickView(offset: $leftStick, accent: settings.joystickAccent).scaleEffect(0.85)
                 }
                 .frame(width: 110)
 
-                // CENTER = Emulated Game panel (sketch)
                 gamePanel
                     .frame(maxWidth: .infinity)
                     .frame(height: 220)
 
-                // Right: face buttons + right stick + triggers
                 VStack(spacing: 12) {
                     HStack(spacing: 10) {
                         FaceButton(label: "Y", color: .yellow, size: 40)
@@ -80,8 +69,7 @@ struct ControllerView: View {
                         FaceButton(label: "B", color: .red, size: 40)
                         FaceButton(label: "A", color: .green, size: 40)
                     }
-                    AnalogStickView(offset: $rightStick, accent: settings.joystickAccent)
-                        .scaleEffect(0.75)
+                    AnalogStickView(offset: $rightStick, accent: settings.joystickAccent).scaleEffect(0.75)
                     HStack(spacing: 8) {
                         TriggerButton(label: "L")
                         TriggerButton(label: "R")
@@ -93,7 +81,6 @@ struct ControllerView: View {
 
             Spacer(minLength: 8)
 
-            // Bottom: select / start + mode label
             HStack {
                 ControllerButton(systemName: "minus", size: 32) {}
                 Spacer()
@@ -109,25 +96,20 @@ struct ControllerView: View {
         }
     }
 
-    // MARK: - ON TV MODE (sketch bottom-left small controller, game on TV)
     private var onTVLayout: some View {
         VStack(spacing: 0) {
             topBar
-
-            Text("TV MODE — game is on external display")
+            Text("TV MODE — game on external display")
                 .font(.caption2)
                 .foregroundStyle(settings.joystickAccent)
                 .padding(.top, 4)
-
             Spacer()
-
             HStack(alignment: .center, spacing: 0) {
                 VStack(spacing: 22) {
                     DPadView(accent: settings.joystickAccent)
                     AnalogStickView(offset: $leftStick, accent: settings.joystickAccent)
                 }
                 .frame(maxWidth: .infinity)
-
                 VStack(spacing: 14) {
                     HStack(spacing: 16) {
                         FaceButton(label: "Y", color: .yellow, size: 52)
@@ -139,7 +121,6 @@ struct ControllerView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-
                 VStack(spacing: 22) {
                     AnalogStickView(offset: $rightStick, accent: settings.joystickAccent)
                     HStack(spacing: 12) {
@@ -149,9 +130,7 @@ struct ControllerView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-
             Spacer()
-
             HStack {
                 ControllerButton(systemName: "minus", size: 34) {}
                 Spacer()
@@ -166,18 +145,16 @@ struct ControllerView: View {
         }
     }
 
-    // Game canvas shown on phone (placeholder until real core)
     private var gamePanel: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.black)
+            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.black)
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(settings.joystickAccent.opacity(0.4), lineWidth: 1.5)
 
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 Image(systemName: "rectangle.split.2x1.fill")
                     .font(.title)
-                    .foregroundStyle(settings.accentColor.opacity(0.8))
+                    .foregroundStyle(settings.accentColor.opacity(0.85))
                 Text("Emulated Game")
                     .font(.caption.bold())
                     .foregroundStyle(.white.opacity(0.9))
@@ -186,11 +163,16 @@ struct ControllerView: View {
                     .foregroundStyle(.white.opacity(0.5))
                     .lineLimit(1)
                     .padding(.horizontal, 8)
-                if let t = appState.loadedTweakName {
-                    Text(t)
-                        .font(.system(size: 9))
-                        .foregroundStyle(settings.joystickAccent)
-                }
+                // Core status from dylib loader
+                Text(appState.coreStatus)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundStyle(
+                        CoreLoader.shared.loadedCoreName != nil
+                        ? Color.green.opacity(0.9)
+                        : Color.orange.opacity(0.9)
+                    )
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 6)
             }
         }
     }
@@ -200,9 +182,7 @@ struct ControllerView: View {
             ControllerButton(systemName: "line.3.horizontal", size: 40) {
                 appState.showInGameMenu = true
             }
-
             Spacer()
-
             HStack(spacing: 8) {
                 ControllerButton(systemName: "rectangle.on.rectangle", size: 36) {
                     appState.isMouseMode.toggle()
@@ -211,29 +191,20 @@ struct ControllerView: View {
                     appState.isMouseMode.toggle()
                 }
             }
-
             Spacer()
-
             Button {
                 appState.isBrowserMode.toggle()
             } label: {
                 ZStack {
-                    Circle()
-                        .fill(settings.joystickAccent.opacity(0.25))
-                        .frame(width: 40, height: 40)
-                    Image(systemName: "safari.fill")
-                        .font(.body)
-                        .foregroundStyle(settings.joystickAccent)
+                    Circle().fill(settings.joystickAccent.opacity(0.25)).frame(width: 40, height: 40)
+                    Image(systemName: "safari.fill").font(.body).foregroundStyle(settings.joystickAccent)
                 }
             }
-
-            // Toggle TV mode
             if settings.tvModeEnabled {
                 ControllerButton(systemName: appState.isTVModeActive ? "iphone" : "tv", size: 36) {
                     appState.isTVModeActive.toggle()
                 }
             }
-
             ControllerButton(systemName: "xmark", size: 36) {
                 appState.quitGame()
             }
@@ -242,8 +213,6 @@ struct ControllerView: View {
         .padding(.top, 6)
     }
 }
-
-// MARK: - Subviews
 
 struct ControllerButton: View {
     let systemName: String
@@ -257,11 +226,7 @@ struct ControllerButton: View {
                 .font(.system(size: size * 0.4))
                 .foregroundStyle(.white)
                 .frame(width: size, height: size)
-                .background(
-                    Circle()
-                        .fill(Color.white.opacity(0.08))
-                        .shadow(color: .black.opacity(0.4), radius: 3, y: 2)
-                )
+                .background(Circle().fill(Color.white.opacity(0.08)).shadow(color: .black.opacity(0.4), radius: 3, y: 2))
                 .overlay(Circle().stroke(settings.joystickAccent.opacity(0.4), lineWidth: 1.2))
         }
     }
@@ -277,11 +242,7 @@ struct FaceButton: View {
             .font(.system(size: size * 0.35, weight: .bold))
             .foregroundStyle(.white)
             .frame(width: size, height: size)
-            .background(
-                Circle()
-                    .fill(color.opacity(0.85))
-                    .shadow(color: color.opacity(0.45), radius: 5, y: 2)
-            )
+            .background(Circle().fill(color.opacity(0.85)).shadow(color: color.opacity(0.45), radius: 5, y: 2))
     }
 }
 
@@ -294,27 +255,17 @@ struct TriggerButton: View {
             .font(.caption2.bold())
             .foregroundStyle(.white)
             .frame(width: 44, height: 24)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(settings.joystickAccent.opacity(0.3))
-            )
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(settings.joystickAccent.opacity(0.3)))
     }
 }
 
 struct DPadView: View {
     let accent: Color
-
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 5)
-                .fill(Color.white.opacity(0.14))
-                .frame(width: 32, height: 96)
-            RoundedRectangle(cornerRadius: 5)
-                .fill(Color.white.opacity(0.14))
-                .frame(width: 96, height: 32)
-            Circle()
-                .fill(accent.opacity(0.35))
-                .frame(width: 24, height: 24)
+            RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.14)).frame(width: 32, height: 96)
+            RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.14)).frame(width: 96, height: 32)
+            Circle().fill(accent.opacity(0.35)).frame(width: 24, height: 24)
         }
     }
 }
@@ -326,17 +277,9 @@ struct AnalogStickView: View {
 
     var body: some View {
         ZStack {
+            Circle().fill(Color.white.opacity(0.1)).frame(width: 88, height: 88)
             Circle()
-                .fill(Color.white.opacity(0.1))
-                .frame(width: 88, height: 88)
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [accent.opacity(0.85), accent.opacity(0.4)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .fill(LinearGradient(colors: [accent.opacity(0.85), accent.opacity(0.4)], startPoint: .top, endPoint: .bottom))
                 .frame(width: 48, height: 48)
                 .offset(offset)
                 .gesture(

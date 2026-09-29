@@ -16,6 +16,7 @@ final class AppState: ObservableObject {
     @Published var showInGameMenu: Bool = false
     @Published var gameplaySpeed: Double = 1.0
     @Published var loadedTweakName: String? = nil
+    @Published var coreStatus: String = "No core"
 
     enum Tab: String, CaseIterable {
         case emu = "Emu"
@@ -27,9 +28,17 @@ final class AppState: ObservableObject {
         currentGame = game
         isPlaying = true
         loadedTweakName = nil
+        // Try load matching dylib for this system
+        let ok = CoreLoader.shared.loadCore(for: game.system)
+        if ok {
+            coreStatus = "Core: \(CoreLoader.shared.loadedCoreName ?? "?")"
+        } else {
+            coreStatus = CoreLoader.shared.lastError ?? "No dylib for \(game.system)"
+        }
     }
 
     func quitGame() {
+        CoreLoader.shared.unload()
         isPlaying = false
         currentGame = nil
         isTVModeActive = false
@@ -37,6 +46,7 @@ final class AppState: ObservableObject {
         isMouseMode = false
         showInGameMenu = false
         loadedTweakName = nil
+        coreStatus = "No core"
         selectedTab = .emu
     }
 }
