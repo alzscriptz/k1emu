@@ -23,7 +23,7 @@ struct InstallROMSheet: View {
     let systems = ["NDS", "GBA", "GB", "GBC", "NES", "SNES", "N64", "PS1", "Genesis", "SMS", "PCE", "Other"]
 
     private var allowedTypes: [UTType] {
-        [.data, .item, .content]
+        [.data, .item, .content, .archive, .zip]
     }
 
     var body: some View {
@@ -167,18 +167,16 @@ struct InstallROMSheet: View {
                 system = detected
             }
 
-            let game = romLibrary.addGame(
-                name: nameText.isEmpty ? url.deletingPathExtension().lastPathComponent : nameText,
-                system: system,
-                fileName: fileName,
-                sourceURL: url
-            )
-
-            if game.fileURL == nil {
-                errorMessage = "The file picker worked, but the ROM could not be copied into the app sandbox."
-                selectedFileName = nil
-            } else {
+            do {
+                _ = try romLibrary.importROM(
+                    from: url,
+                    name: nameText.isEmpty ? nil : nameText,
+                    system: system
+                )
                 dismiss()
+            } catch {
+                errorMessage = error.localizedDescription
+                selectedFileName = nil
             }
 
         case .failure(let error):

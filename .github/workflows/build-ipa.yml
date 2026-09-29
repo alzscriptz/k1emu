@@ -10,12 +10,12 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+        run: sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
       - name: Install xcodegen
         run: brew install xcodegen
@@ -66,8 +66,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v1.5.0"
-          NOTES="k1emu v1.5.0 — redesigned settings/home, persistent preferences, real file import, tweak files, external-display shell and live FPS HUD."
+          TAG="v1.6.0"
+          NOTES="k1emu v1.6.0 — redesigned settings/home, persistent preferences, real file import, tweak files, external-display shell and live FPS HUD."
           TARGET="$GITHUB_SHA"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" k1emu.ipa --clobber
