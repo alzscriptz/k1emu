@@ -14,16 +14,29 @@ final class TweakStore: ObservableObject {
         documentsURL.appendingPathComponent("tweaks.json")
     }
 
+    /// Built-in preset tweaks always available
+    static let presets: [TweakItem] = [
+        TweakItem(name: "Infinite Lives", description: "Never lose a life", system: "All", fileName: "preset_inf_lives.cht"),
+        TweakItem(name: "Infinite Health", description: "HP never drops", system: "All", fileName: "preset_inf_hp.cht"),
+        TweakItem(name: "Max Money / Score", description: "Resources maxed", system: "All", fileName: "preset_money.cht"),
+        TweakItem(name: "Unlock All Levels", description: "Every stage available", system: "All", fileName: "preset_unlock.cht"),
+        TweakItem(name: "Moon Jump", description: "Hold jump for float", system: "N64", fileName: "preset_moon.cht"),
+        TweakItem(name: "Walk Through Walls", description: "No collision", system: "All", fileName: "preset_noclip.cht"),
+        TweakItem(name: "One-Hit KO", description: "Enemies die in one hit", system: "All", fileName: "preset_ohko.cht"),
+        TweakItem(name: "Fast Forward Always", description: "Game runs 2× internally", system: "All", fileName: "preset_ff.cht"),
+        TweakItem(name: "Invincibility", description: "No damage taken", system: "All", fileName: "preset_invuln.cht"),
+        TweakItem(name: "All Items", description: "Inventory full", system: "All", fileName: "preset_items.cht")
+    ]
+
     init() {
         load()
-        if tweaks.isEmpty {
-            tweaks = [
-                TweakItem(name: "Infinite Lives", description: "Never lose a life", system: "All", fileName: "inf_lives.cht"),
-                TweakItem(name: "Max Speed", description: "Boost movement speed", system: "N64", fileName: "max_speed.cht"),
-                TweakItem(name: "Unlock All", description: "All levels unlocked", system: "All", fileName: "unlock.cht")
-            ]
-            save()
+        // Ensure presets exist
+        for p in Self.presets {
+            if !tweaks.contains(where: { $0.fileName == p.fileName }) {
+                tweaks.append(p)
+            }
         }
+        save()
     }
 
     func load() {
@@ -43,7 +56,17 @@ final class TweakStore: ObservableObject {
     }
 
     func delete(_ tweak: TweakItem) {
+        // Don't delete built-in presets from disk identity — allow remove from list only if custom
+        if Self.presets.contains(where: { $0.fileName == tweak.fileName }) { return }
         tweaks.removeAll { $0.id == tweak.id }
         save()
+    }
+
+    var customTweaks: [TweakItem] {
+        tweaks.filter { t in !Self.presets.contains(where: { $0.fileName == t.fileName }) }
+    }
+
+    var presetTweaks: [TweakItem] {
+        tweaks.filter { t in Self.presets.contains(where: { $0.fileName == t.fileName }) }
     }
 }
