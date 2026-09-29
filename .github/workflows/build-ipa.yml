@@ -72,5 +72,5 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" k1emu.ipa --clobber
           else
-            gh release create "$TAG" k1emu.ipa --target "$TARGET" --title "k1emu v1.5.0" --notes "$NOTES"
+            gh release create "$TAG" k1emu.ipa --target "$TARGET" --title "k1emu v1.6.1" --notes "$NOTES"
           fi
