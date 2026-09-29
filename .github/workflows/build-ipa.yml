@@ -20,7 +20,7 @@ jobs:
       - name: Install xcodegen
         run: brew install xcodegen
 
-      - name: Generate and patch project
+      - name: Generate project
         run: |
           xcodegen generate
           sed -i.bak 's/objectVersion = 77;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj || true
@@ -30,17 +30,13 @@ jobs:
         continue-on-error: true
         run: xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release -destination generic/platform=iOS -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build || true
 
-      - name: Make IPA and publish Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Package IPA
         run: |
           mkdir -p Payload
           APP=$(find build -name k1emu.app -type d | head -1 || true)
           if [ -n "$APP" ]; then
-            echo "Found app: $APP"
             cp -R "$APP" Payload/
           else
-            echo "No binary - packaging placeholder with sources"
             mkdir -p Payload/k1emu.app
             cp k1emu/Info.plist Payload/k1emu.app/
             cp -R k1emu Payload/k1emu.app/Sources
@@ -50,20 +46,14 @@ jobs:
           zip -qr k1emu.ipa Payload
           ls -lah k1emu.ipa
 
-          # Create or update release and upload IPA
-          if gh release view v1.0.0 >/dev/null 2>&1; then
-            echo "Release v1.0.0 exists - uploading asset"
+      - name: Publish Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "k1emu v1.0.0 - sideload with AltStore/SideStore/TrollStore" > notes.txt
+          if gh release view v1.0.0; then
             gh release upload v1.0.0 k1emu.ipa --clobber
           else
-            echo "Creating release v1.0.0"
-            gh release create v1.0.0 k1emu.ipa \
-              --title "k1emu v1.0.0" \
-              --notes "k1emu v1.0.0 - All-types ROMs emulator UI for iOS.
-
-Download k1emu.ipa and sideload with AltStore, SideStore, or TrollStore.
-
-Unsigned build. Full UI included; real cores are placeholders."
+            gh release create v1.0.0 k1emu.ipa --title "k1emu v1.0.0" --notes-file notes.txt
           fi
-
-          echo "Done. Release URL:"
-          gh release view v1.0.0 --json url -q .url
+          gh release view v1.0.0
