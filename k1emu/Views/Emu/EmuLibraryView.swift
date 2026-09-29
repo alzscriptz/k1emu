@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct EmuLibraryView: View {
+    var onToggleSidebar: (() -> Void)? = nil
+
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var romLibrary: ROMLibrary
     @EnvironmentObject var settings: SettingsStore
@@ -11,108 +13,97 @@ struct EmuLibraryView: View {
     ]
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                AnimatedBackground().ignoresSafeArea()
+        VStack(spacing: 0) {
+            // TOP BAR — matches sketch: ? | logo title | + 
+            HStack(spacing: 12) {
+                Button { onToggleSidebar?() } label: {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
 
-                if romLibrary.games.isEmpty {
-                    emptyState
-                } else {
-                    ScrollView {
-                        // Logo + title strip
-                        HStack(spacing: 12) {
-                            K1Logo(size: 40)
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text("k1emu")
-                                    .font(.title3.bold())
-                                Text("\(romLibrary.games.count) game\(romLibrary.games.count == 1 ? "" : "s")")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 4)
+                Button { appState.showFAQ = true } label: {
+                    Image(systemName: "questionmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(settings.accentColor)
+                }
 
-                        LazyVGrid(columns: columns, spacing: 16) {
-                            ForEach(romLibrary.games) { game in
-                                GameCard(game: game)
-                                    .contextMenu {
-                                        Button { appState.showGameInfo = game } label: {
-                                            Label("Info", systemImage: "info.circle")
-                                        }
-                                        Button { appState.showTweakPickerFor = game } label: {
-                                            Label("Tweaks", systemImage: "slider.horizontal.3")
-                                        }
-                                        Button {} label: {
-                                            Label("Multitask", systemImage: "rectangle.on.rectangle")
-                                        }
-                                        Divider()
-                                        Button(role: .destructive) {
-                                            withAnimation { romLibrary.delete(game) }
-                                        } label: {
-                                            Label("Delete", systemImage: "trash")
-                                        }
-                                    }
-                                    .onTapGesture {
-                                        appState.startGame(game)
-                                    }
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                        .padding(.bottom, 100)
-                    }
+                Spacer()
+
+                HStack(spacing: 8) {
+                    K1Logo(size: 28)
+                    Text("k1emu")
+                        .font(.headline.bold())
+                }
+
+                Spacer()
+
+                Button { appState.showInstallSheet = true } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .font(.title2)
+                        .foregroundStyle(settings.accentColor)
                 }
             }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { appState.showFAQ = true } label: {
-                        Image(systemName: "questionmark.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(settings.accentColor)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            if romLibrary.games.isEmpty {
+                Spacer()
+                emptyState
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 16) {
+                        ForEach(romLibrary.games) { game in
+                            GameCard(game: game)
+                                .contextMenu {
+                                    Button { appState.showGameInfo = game } label: {
+                                        Label("Info", systemImage: "info.circle")
+                                    }
+                                    Button { appState.showTweakPickerFor = game } label: {
+                                        Label("Tweaks", systemImage: "slider.horizontal.3")
+                                    }
+                                    Button {} label: {
+                                        Label("Multitask", systemImage: "rectangle.on.rectangle")
+                                    }
+                                    Divider()
+                                    Button(role: .destructive) {
+                                        withAnimation { romLibrary.delete(game) }
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                                .onTapGesture {
+                                    appState.startGame(game)
+                                }
+                        }
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { appState.showInstallSheet = true } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(settings.accentColor)
-                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 40)
                 }
             }
-            .toolbarBackground(.hidden, for: .navigationBar)
         }
     }
 
     private var emptyState: some View {
-        VStack(spacing: 24) {
-            K1Logo(size: 88)
+        VStack(spacing: 20) {
+            K1Logo(size: 80)
+            Text("No games yet")
+                .font(.title2.bold())
+            Text("Tap + to add a ROM (.nds, .gba, .n64, .nes…)\nNothing shows until you add something.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
 
-            VStack(spacing: 8) {
-                Text("No games yet")
-                    .font(.title2.bold())
-                Text("Tap + to install a ROM from Files or a URL.\nNothing shows here until you add something.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
-            }
-
-            Button {
-                appState.showInstallSheet = true
-            } label: {
+            Button { appState.showInstallSheet = true } label: {
                 Label("Install ROM", systemImage: "plus")
                     .font(.headline)
                     .padding(.horizontal, 28)
                     .padding(.vertical, 14)
-                    .background(
-                        Capsule()
-                            .fill(settings.accentColor)
-                            .shadow(color: settings.accentColor.opacity(0.4), radius: 12, y: 4)
-                    )
+                    .background(Capsule().fill(settings.accentColor))
                     .foregroundStyle(.white)
+                    .shadow(color: settings.accentColor.opacity(0.4), radius: 12, y: 4)
             }
         }
     }
@@ -128,10 +119,7 @@ struct GameCard: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [
-                                settings.accentColor.opacity(0.4),
-                                settings.accentColor.opacity(0.08)
-                            ],
+                            colors: [settings.accentColor.opacity(0.4), settings.accentColor.opacity(0.08)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -144,14 +132,7 @@ struct GameCard: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [.white.opacity(0.25), .clear],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
+                            .stroke(LinearGradient(colors: [.white.opacity(0.25), .clear], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
                     )
 
                 Text(game.displaySystem)
@@ -167,14 +148,15 @@ struct GameCard: View {
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
 
-            // Run hint
-            HStack(spacing: 4) {
-                Image(systemName: "play.fill")
-                    .font(.caption2)
-                Text("Run")
-                    .font(.caption2.weight(.semibold))
+            // RUN button — matches sketch
+            HStack {
+                Image(systemName: "play.fill").font(.caption2)
+                Text("Run").font(.caption2.weight(.bold))
             }
-            .foregroundStyle(settings.accentColor)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(settings.accentColor))
         }
     }
 
@@ -186,7 +168,7 @@ struct GameCard: View {
         case "GB", "GBC": return "gamecontroller"
         case "GBA": return "gamecontroller.fill"
         case "PS1", "PSX": return "opticaldisc"
-        case "NDS": return "rectangle.split.2x1"
+        case "NDS", "DS": return "rectangle.split.2x1"
         default: return "opticaldisc.fill"
         }
     }

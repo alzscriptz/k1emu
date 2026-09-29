@@ -10,16 +10,17 @@ struct RootView: View {
 
             if appState.isPlaying, let game = appState.currentGame {
                 if appState.isTVModeActive {
-                    // Phone is now the controller – game is on external display
-                    ControllerView(game: game)
+                    // TV mode: phone is full controller only
+                    ControllerView(game: game, showGamePanel: false)
                 } else {
-                    EmulatorPlayView(game: game)
+                    // ON PHONE MODE (sketch): game panel + controller on same screen
+                    ControllerView(game: game, showGamePanel: true)
                 }
             } else {
-                MainTabView()
+                // Main shell: SIDEBAR + content (matches sketch)
+                SidebarShellView()
             }
 
-            // In-game menu overlay (works in both normal + TV mode)
             if appState.showInGameMenu {
                 InGameMenuView()
                     .transition(.opacity.combined(with: .scale))
