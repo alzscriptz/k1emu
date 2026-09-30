@@ -5,170 +5,237 @@ struct EmulatorPlayView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var settings: SettingsStore
 
+    @State private var coreLoaded = false
+
     var body: some View {
         GeometryReader { proxy in
+            let s = min(proxy.size.width / 1536.0, proxy.size.height / 1536.0)
+
             ZStack {
-                Color.black.ignoresSafeArea()
+                Color.white.ignoresSafeArea()
 
-                VStack(spacing: 8) {
-                    gameScreen
-                        .frame(maxWidth: .infinity)
-                        .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                        .padding(.horizontal, 12)
+                // The reference layout is intentionally kept as one controller surface:
+                // triggers/bumpers at the top, game window in the middle, sticks/d-pad/
+                // face buttons around it, and Browser centered underneath.
+                controllerSurface
+                    .scaleEffect(s, anchor: .center)
+                    .frame(width: 1536, height: 1536)
+                    .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
 
-                    Spacer(minLength: 0)
-
-                    phoneControls
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 14)
-                }
-                .frame(width: proxy.size.width, height: proxy.size.height)
-
-                VStack {
-                    HStack {
-                        Spacer()
-                        FPSOverlay()
-                            .padding(.trailing, 18)
-                            .padding(.top, 12)
-                    }
-                    Spacer()
-                }
+                // FPS is the only overlay that is not part of the controller artwork.
+                FPSOverlay()
+                    .padding(.top, 12)
+                    .padding(.trailing, 18)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
             }
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+        .task {
+            coreLoaded = CoreLoader.shared.loadCore(for: game.system)
+        }
+        .onDisappear {
+            CoreLoader.shared.unload()
+        }
     }
 
-    private var gameScreen: some View {
+    private var controllerSurface: some View {
         ZStack {
-            LinearGradient(
-                colors: [.black, settings.accentColor.opacity(0.16), .black],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+            // Top shoulders
+            ShoulderControl(title: "LT", shape: .trigger)
+                .position(x: 296, y: 188)
+
+            ShoulderControl(title: "LB", shape: .bumper)
+                .position(x: 296, y: 270)
+
+            ShoulderControl(title: "RT", shape: .trigger)
+                .position(x: 1064, y: 188)
+
+            ShoulderControl(title: "RB", shape: .bumper)
+                .position(x: 1064, y: 270)
+
+            // Center game display
+            GameViewport(
+                game: game,
+                coreLoaded: coreLoaded
             )
+            .position(x: 768, y: 488)
 
-            VStack {
-                HStack(spacing: 14) {
-                    Label("x05", systemImage: "star.fill")
-                    Label("x23", systemImage: "circle.fill")
-                    Spacer()
-                }
-                .font(.system(size: 15, weight: .bold, design: .rounded))
-                .foregroundStyle(.white.opacity(0.9))
-                .padding(16)
+            // D-pad
+            PhotoDPad()
+                .position(x: 280, y: 625)
 
-                Spacer()
+            // Xbox face buttons: Y top, X left, B right, A bottom.
+            PhotoFaceButtons()
+                .position(x: 1080, y: 625)
 
-                Image(systemName: "gamecontroller.fill")
-                    .font(.system(size: 48))
-                    .foregroundStyle(settings.accentColor)
+            // Analog sticks
+            PhotoThumbstick()
+                .position(x: 275, y: 1018)
 
-                Text(game.name)
-                    .font(.system(size: 17, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+            PhotoThumbstick()
+                .position(x: 1065, y: 1018)
 
-                Spacer()
-
-                if let tweak = appState.loadedTweakName {
-                    Text(tweak)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.white.opacity(0.5))
-                        .padding(.bottom, 12)
-                }
+            // Three-dot indicator + Browser control
+            HStack(spacing: 34) {
+                Circle().fill(Color.black).frame(width: 42, height: 42)
+                Circle().fill(Color.black).frame(width: 42, height: 42)
+                Circle().fill(Color.black).frame(width: 42, height: 42)
             }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(.white.opacity(0.18), lineWidth: 1)
-        }
-        .shadow(color: settings.accentColor.opacity(0.14), radius: 22)
-    }
+            .position(x: 768, y: 790)
 
-    // Xbox-style touch layout: D-pad on the left, A/B/X/Y in a diamond on the right.
-    // No +/- symbols and no square button boxes.
-    private var phoneControls: some View {
-        HStack(alignment: .bottom) {
-            TouchDPadView()
-                .frame(width: 126, height: 126)
-
-            Spacer()
-
-            XboxFaceButtons(
-                onA: {},
-                onB: {},
-                onX: {},
-                onY: {}
-            )
-            .frame(width: 148, height: 148)
+            Button(action: {}) {
+                Text("Browser")
+                    .font(.system(size: 54, weight: .regular, design: .default))
+                    .foregroundStyle(.white)
+                    .frame(width: 420, height: 160)
+                    .background(Color.black, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .position(x: 768, y: 900)
         }
-        .frame(height: 150)
+        .frame(width: 1536, height: 1536)
     }
 }
 
-private struct TouchDPadView: View {
+private struct GameViewport: View {
+    let game: GameItem
+    let coreLoaded: Bool
+
+    var body: some View {
+        ZStack {
+            Color.black
+
+            VStack(spacing: 18) {
+                Text("GAME")
+                    .font(.system(size: 88, weight: .regular, design: .default))
+                    .foregroundStyle(.white)
+
+                Text(game.name)
+                    .font(.system(size: 28, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.72))
+                    .lineLimit(1)
+
+                Text(coreLoaded ? "Core loaded" : "Core unavailable")
+                    .font(.system(size: 18, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.48))
+            }
+            .padding(.horizontal, 30)
+        }
+        .frame(width: 600, height: 340)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+}
+
+private struct ShoulderControl: View {
+    enum ShapeKind {
+        case trigger
+        case bumper
+    }
+
+    let title: String
+    let shape: ShapeKind
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 28, weight: .regular, design: .rounded))
+            .foregroundStyle(.white)
+            .frame(
+                width: shape == .trigger ? 196 : 236,
+                height: shape == .trigger ? 64 : 80
+            )
+            .background {
+                if shape == .trigger {
+                    Trapezoid()
+                        .fill(Color(red: 0.76, green: 0.79, blue: 0.83))
+                } else {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color(red: 0.76, green: 0.79, blue: 0.83))
+                }
+            }
+    }
+}
+
+private struct Trapezoid: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+private struct PhotoDPad: View {
+    var body: some View {
+        ZStack {
+            dpadArm(width: 78, height: 210)
+                .offset(y: -4)
+
+            dpadArm(width: 210, height: 78)
+                .offset(x: -4)
+
+            Circle()
+                .fill(Color.black)
+                .frame(width: 70, height: 70)
+        }
+        .frame(width: 250, height: 250)
+    }
+
+    private func dpadArm(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 30, style: .continuous)
+            .fill(Color.black)
+            .frame(width: width, height: height)
+    }
+}
+
+private struct PhotoFaceButtons: View {
+    var body: some View {
+        ZStack {
+            PhotoFaceButton(title: "Y", fill: Color(red: 0.98, green: 0.82, blue: 0.26))
+                .offset(y: -94)
+
+            PhotoFaceButton(title: "X", fill: Color(red: 0.32, green: 0.80, blue: 0.84))
+                .offset(x: -94)
+
+            PhotoFaceButton(title: "B", fill: Color(red: 0.95, green: 0.04, blue: 0.08))
+                .offset(x: 94)
+
+            PhotoFaceButton(title: "A", fill: Color(red: 0.08, green: 0.90, blue: 0.48))
+                .offset(y: 94)
+        }
+        .frame(width: 270, height: 270)
+    }
+}
+
+private struct PhotoFaceButton: View {
+    let title: String
+    let fill: Color
+
+    var body: some View {
+        Button(action: {}) {
+            Text(title)
+                .font(.system(size: 50, weight: .regular, design: .rounded))
+                .foregroundStyle(.white)
+                .frame(width: 92, height: 92)
+                .background(fill, in: Circle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct PhotoThumbstick: View {
     var body: some View {
         ZStack {
             Circle()
-                .fill(.white.opacity(0.07))
-                .frame(width: 122, height: 122)
+                .fill(Color(red: 0.86, green: 0.86, blue: 0.86))
+                .frame(width: 250, height: 250)
 
-            VStack(spacing: 0) {
-                dpadButton("chevron.up")
-                HStack(spacing: 0) {
-                    dpadButton("chevron.left")
-                    Color.clear.frame(width: 42, height: 42)
-                    dpadButton("chevron.right")
-                }
-                dpadButton("chevron.down")
-            }
+            Circle()
+                .fill(Color.black)
+                .frame(width: 192, height: 192)
         }
-    }
-
-    private func dpadButton(_ icon: String) -> some View {
-        Image(systemName: icon)
-            .font(.system(size: 16, weight: .bold))
-            .foregroundStyle(.white.opacity(0.78))
-            .frame(width: 42, height: 42)
-            .background(.white.opacity(0.10), in: Circle())
-    }
-}
-
-private struct XboxFaceButtons: View {
-    let onA: () -> Void
-    let onB: () -> Void
-    let onX: () -> Void
-    let onY: () -> Void
-
-    var body: some View {
-        ZStack {
-            faceButton("Y", action: onY)
-                .offset(y: -46)
-
-            faceButton("X", action: onX)
-                .offset(x: -46)
-
-            faceButton("B", action: onB)
-                .offset(x: 46)
-
-            faceButton("A", action: onA)
-                .offset(y: 46)
-        }
-    }
-
-    private func faceButton(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.system(size: 18, weight: .black, design: .rounded))
-                .foregroundStyle(.white)
-                .frame(width: 48, height: 48)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay {
-                    Circle().stroke(.white.opacity(0.20), lineWidth: 1)
-                }
-                .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
-        }
-        .buttonStyle(.plain)
+        .frame(width: 250, height: 250)
     }
 }
