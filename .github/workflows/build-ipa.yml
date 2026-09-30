@@ -1,79 +1,101 @@
 name: Build IPA
+# fresh build trigger
 
 on:
   push:
-    branches: [main]
+    branches: [main, ui-overhaul-2026]
   workflow_dispatch:
 
+# The NDS core is committed under Cores/ so CI needs no compiler-repo token.
 permissions:
   contents: write
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+        run: sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
       - name: Install xcodegen
         run: brew install xcodegen
 
       - name: Generate project
         run: |
+          set -euo pipefail
           xcodegen generate
           sed -i.bak 's/objectVersion = 77;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj || true
           sed -i.bak 's/objectVersion = 60;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj || true
 
       - name: Build app
-        continue-on-error: true
-        run: xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release -destination generic/platform=iOS -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build || true
-
-      - name: Fetch cores from compiler repo
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p Cores
-          # Download libnds.dylib built by alzscriptz/compiler
-          gh release download latest-build \
-            --repo alzscriptz/compiler \
-            --pattern 'libnds.dylib' \
-            --dir Cores \
-            --clobber || echo "libnds download skipped"
-          ls -lah Cores/ || true
-          file Cores/libnds.dylib || true
+          set -euo pipefail
+          xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release             -destination generic/platform=iOS -derivedDataPath build             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 
-      - name: Package IPA with dylibs
+      - name: Restore bundled NDS core
         run: |
-          mkdir -p Payload/k1emu.app/Frameworks
-          APP=$(find build -name k1emu.app -type d | head -1 || true)
-          if [ -n "$APP" ]; then
-            cp -R "$APP" Payload/
-            mkdir -p Payload/k1emu.app/Frameworks
-          else
-            mkdir -p Payload/k1emu.app
-            cp k1emu/Info.plist Payload/k1emu.app/
-            cp -R k1emu Payload/k1emu.app/Sources
-            printf '%s\n' '#!/bin/sh' 'echo k1emu' > Payload/k1emu.app/k1emu
-            chmod +x Payload/k1emu.app/k1emu
-          fi
-          find Cores k1emu/Frameworks -name '*.dylib' 2>/dev/null | while read f; do
-            echo "Embedding $f"
-            cp "$f" Payload/k1emu.app/Frameworks/
-          done
-          ls -la Payload/k1emu.app/Frameworks/ || true
+          set -euo pipefail
+          test -f Cores/libnds.dylib.gz.b64
+          python3 - <<'PY'
+          import base64, gzip
+          from pathlib import Path
+          encoded = Path("Cores/libnds.dylib.gz.b64").read_text().strip()
+          compressed = base64.b64decode(encoded)
+          Path("Cores/libnds.dylib").write_bytes(gzip.decompress(compressed))
+          PY
+          test -f Cores/libnds.dylib
+          echo "Bundled NDS core:"
+          ls -lh Cores/libnds.dylib
+          file Cores/libnds.dylib
+          lipo -info Cores/libnds.dylib
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          rm -rf Payload
+          mkdir -p Payload
+          APP=$(find build -name k1emu.app -type d | head -1)
+          test -n "$APP"
+          cp -R "$APP" Payload/k1emu.app
+
+          mkdir -p Payload/k1emu.app/Frameworks/libnds.framework
+          cp Cores/libnds.dylib Payload/k1emu.app/Frameworks/libnds.framework/libnds
+
+          cat > Payload/k1emu.app/Frameworks/libnds.framework/Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleDevelopmentRegion</key><string>en</string>
+            <key>CFBundleExecutable</key><string>libnds</string>
+            <key>CFBundleIdentifier</key><string>com.k1emu.core.nds</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundleName</key><string>libnds</string>
+            <key>CFBundlePackageType</key><string>FMWK</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>CFBundleVersion</key><string>1</string>
+          </dict></plist>
+          PLIST
+
+          chmod +x Payload/k1emu.app/Frameworks/libnds.framework/libnds
+          install_name_tool -id "@rpath/libnds.framework/libnds" Payload/k1emu.app/Frameworks/libnds.framework/libnds || true
+          test -x Payload/k1emu.app/Frameworks/libnds.framework/libnds
+          find Payload/k1emu.app/Frameworks -maxdepth 2 -print
           zip -qr k1emu.ipa Payload
-          ls -lah k1emu.ipa
+          ls -lh k1emu.ipa
 
-      - name: Publish Release v1.4.0
+      - name: Publish IPA to GitHub Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/ui-overhaul-2026'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "k1emu v1.4.0 - Includes libnds.dylib (arm64 iOS) from compiler repo. CoreLoader dlopens Frameworks/libnds.dylib." > notes.txt
-          if gh release view v1.4.0; then
-            gh release upload v1.4.0 k1emu.ipa --clobber
+          set -euo pipefail
+          TAG="v1.7.1"
+          NOTES="k1emu v1.7.1 — bundles the NDS core directly and uses Xbox-style phone controls."
+          TARGET="$GITHUB_SHA"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" k1emu.ipa --clobber
           else
-            gh release create v1.4.0 k1emu.ipa --title "k1emu v1.4.0" --notes-file notes.txt
+            gh release create "$TAG" k1emu.ipa --target "$TARGET" --title "k1emu v1.7.1" --notes "$NOTES"
           fi
-          gh release view v1.4.0

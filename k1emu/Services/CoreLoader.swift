@@ -1,8 +1,8 @@
 import Foundation
 import Darwin
 
-/// Loads emulator core dylibs from the app bundle Frameworks folder.
-/// You provide the .dylib (ios-arm64); we package it into the IPA.
+/// Loads emulator cores packaged as iOS frameworks.
+/// iOS device builds must package dynamic code as a .framework rather than a loose .dylib.
 @MainActor
 final class CoreLoader: ObservableObject {
     static let shared = CoreLoader()
@@ -12,7 +12,6 @@ final class CoreLoader: ObservableObject {
 
     private var handle: UnsafeMutableRawPointer?
 
-    /// Map system id -> possible dylib base names to try
     private let coreNames: [String: [String]] = [
         "NDS": ["libnds", "nds_libretro", "libretro_nds", "desmume"],
         "GBA": ["libgba", "gba_libretro", "mgba"],
@@ -27,38 +26,57 @@ final class CoreLoader: ObservableObject {
         "Other": ["libcore", "core"]
     ]
 
-    /// Search paths inside the .app for dylibs
     private var searchDirs: [URL] {
         var dirs: [URL] = []
+
         if let fw = Bundle.main.privateFrameworksURL {
             dirs.append(fw)
         }
+
+        let bundle = Bundle.main.bundleURL
+        dirs.append(bundle.appendingPathComponent("Frameworks"))
+        dirs.append(bundle.appendingPathComponent("Cores"))
+        dirs.append(bundle.appendingPathComponent("Resources/Cores"))
         if let res = Bundle.main.resourceURL {
             dirs.append(res.appendingPathComponent("Frameworks"))
             dirs.append(res.appendingPathComponent("Cores"))
             dirs.append(res)
         }
-        // Also check executable directory
+
         if let exe = Bundle.main.executableURL?.deletingLastPathComponent() {
             dirs.append(exe.appendingPathComponent("Frameworks"))
+            dirs.append(exe.appendingPathComponent("Cores"))
             dirs.append(exe)
         }
-        return dirs
+
+        var seen = Set<String>()
+        return dirs.filter { seen.insert($0.path).inserted }
     }
 
-    /// List every .dylib found in the bundle (for Settings / debug)
     func listAvailableCores() -> [String] {
-        var names: [String] = []
+        var names = Set<String>()
+
         for dir in searchDirs {
-            guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
-            for f in files where f.pathExtension == "dylib" || f.pathExtension == "framework" {
-                names.append(f.lastPathComponent)
+            guard let files = try? FileManager.default.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: nil
+            ) else { continue }
+
+            for file in files {
+                if file.pathExtension == "framework" {
+                    let binary = file.appendingPathComponent(file.deletingPathExtension().lastPathComponent)
+                    if FileManager.default.fileExists(atPath: binary.path) {
+                        names.insert(file.lastPathComponent)
+                    }
+                } else if file.pathExtension == "dylib" {
+                    names.insert(file.lastPathComponent)
+                }
             }
         }
-        return Array(Set(names)).sorted()
+
+        return names.sorted()
     }
 
-    /// Try to load a core for the given system. Returns true if dlopen succeeded.
     @discardableResult
     func loadCore(for system: String) -> Bool {
         unload()
@@ -67,61 +85,79 @@ final class CoreLoader: ObservableObject {
         let key = system.uppercased()
         var candidates = coreNames[key] ?? []
         candidates.append(contentsOf: coreNames["Other"] ?? [])
-        // Also try exact system name
         candidates.insert("lib\(key.lowercased())", at: 0)
 
         for dir in searchDirs {
             for base in candidates {
-                let urls = [
-                    dir.appendingPathComponent("\(base).dylib"),
-                    dir.appendingPathComponent(base),
-                    dir.appendingPathComponent("\(base).framework/\(base)")
-                ]
-                for url in urls {
-                    if FileManager.default.fileExists(atPath: url.path) {
-                        if open(path: url.path, name: url.lastPathComponent) {
-                            return true
-                        }
-                    }
+                let framework = dir.appendingPathComponent("\(base).framework")
+                let frameworkBinary = framework.appendingPathComponent(base)
+                if FileManager.default.fileExists(atPath: frameworkBinary.path),
+                   open(path: frameworkBinary.path, name: "\(base).framework") {
+                    return true
+                }
+
+                let dylib = dir.appendingPathComponent("\(base).dylib")
+                if FileManager.default.fileExists(atPath: dylib.path),
+                   open(path: dylib.path, name: dylib.lastPathComponent) {
+                    return true
+                }
+
+                let bare = dir.appendingPathComponent(base)
+                if FileManager.default.fileExists(atPath: bare.path),
+                   open(path: bare.path, name: bare.lastPathComponent) {
+                    return true
                 }
             }
-            // Fallback: any dylib in folder whose name contains system token
-            if let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
-                for f in files where f.pathExtension == "dylib" {
-                    let lower = f.lastPathComponent.lowercased()
-                    if lower.contains(key.lowercased()) || key == "OTHER" {
-                        if open(path: f.path, name: f.lastPathComponent) {
-                            return true
-                        }
+
+            if let files = try? FileManager.default.contentsOfDirectory(
+                at: dir,
+                includingPropertiesForKeys: nil
+            ) {
+                for framework in files where framework.pathExtension == "framework" {
+                    let name = framework.deletingPathExtension().lastPathComponent
+                    let binary = framework.appendingPathComponent(name)
+                    if name.lowercased().contains(key.lowercased()),
+                       FileManager.default.fileExists(atPath: binary.path),
+                       open(path: binary.path, name: framework.lastPathComponent) {
+                        return true
                     }
                 }
             }
         }
 
-        lastError = "No dylib found for \(system). Drop an ios-arm64 .dylib into Frameworks/ or Cores/."
+        lastError = "No \(system) core is bundled. The iOS build must contain an ios-arm64 core framework."
         loadedCoreName = nil
         return false
     }
 
-    /// Load a specific dylib by file name (e.g. "libnds.dylib")
     @discardableResult
     func loadCore(named fileName: String) -> Bool {
         unload()
         lastError = nil
+
         for dir in searchDirs {
-            let url = dir.appendingPathComponent(fileName)
-            if FileManager.default.fileExists(atPath: url.path) {
-                return open(path: url.path, name: fileName)
+            let direct = dir.appendingPathComponent(fileName)
+            if FileManager.default.fileExists(atPath: direct.path),
+               open(path: direct.path, name: fileName) {
+                return true
+            }
+
+            let base = direct.deletingPathExtension().lastPathComponent
+            let frameworkBinary = dir
+                .appendingPathComponent("\(base).framework")
+                .appendingPathComponent(base)
+            if FileManager.default.fileExists(atPath: frameworkBinary.path),
+               open(path: frameworkBinary.path, name: "\(base).framework") {
+                return true
             }
         }
+
         lastError = "\(fileName) not found in app bundle"
         return false
     }
 
     private func open(path: String, name: String) -> Bool {
-        // RTLD_NOW | RTLD_GLOBAL
-        let flags = RTLD_NOW
-        guard let h = dlopen(path, flags) else {
+        guard let h = dlopen(path, RTLD_NOW | RTLD_GLOBAL) else {
             if let err = dlerror() {
                 lastError = String(cString: err)
             } else {
@@ -129,6 +165,7 @@ final class CoreLoader: ObservableObject {
             }
             return false
         }
+
         handle = h
         loadedCoreName = name
         lastError = nil
@@ -143,7 +180,6 @@ final class CoreLoader: ObservableObject {
         loadedCoreName = nil
     }
 
-    /// Resolve a C symbol from the loaded dylib (e.g. retro_init)
     func symbol<T>(_ name: String) -> T? {
         guard let h = handle else { return nil }
         guard let sym = dlsym(h, name) else { return nil }
@@ -151,6 +187,8 @@ final class CoreLoader: ObservableObject {
     }
 
     deinit {
-        if let h = handle { dlclose(h) }
+        if let h = handle {
+            dlclose(h)
+        }
     }
 }

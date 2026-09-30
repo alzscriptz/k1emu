@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import UIKit
 
 enum BackgroundEffect: String, CaseIterable, Identifiable {
     case none = "None"
@@ -14,18 +15,20 @@ enum BackgroundEffect: String, CaseIterable, Identifiable {
 
 @MainActor
 final class SettingsStore: ObservableObject {
-    @Published var backgroundColor: Color = Color(hex: "0B0B10")
-    @Published var accentColor: Color = Color(hex: "7C5CFF")
-    @Published var joystickColor: Color = Color(hex: "1C1C24")
-    @Published var joystickAccent: Color = Color(hex: "00E5FF")
-    @Published var backgroundEffect: BackgroundEffect = .liquid
-    @Published var useLiquidGlass: Bool = true
-    @Published var colorScheme: ColorScheme? = .dark
-    @Published var showFPS: Bool = true
-    @Published var target4KWhenStable: Bool = true
+    @Published var backgroundColor: Color = Color(hex: "0B0B10") { didSet { persist() } }
+    @Published var accentColor: Color = Color(hex: "7C5CFF") { didSet { persist() } }
+    @Published var joystickColor: Color = Color(hex: "1C1C24") { didSet { persist() } }
+    @Published var joystickAccent: Color = Color(hex: "00E5FF") { didSet { persist() } }
+    @Published var backgroundEffect: BackgroundEffect = .liquid { didSet { persist() } }
+    @Published var useLiquidGlass: Bool = true { didSet { persist() } }
+    @Published var colorScheme: ColorScheme? = .dark { didSet { persist() } }
+    @Published var showFPS: Bool = true { didSet { persist() } }
+    @Published var target4KWhenStable: Bool = true { didSet { persist() } }
+    @Published var tvModeEnabled: Bool = true { didSet { persist() } }
+    @Published var autoEnterControllerOnExternalDisplay: Bool = true { didSet { persist() } }
 
-    @Published var tvModeEnabled: Bool = true
-    @Published var autoEnterControllerOnExternalDisplay: Bool = true
+    private let defaults = UserDefaults.standard
+    private let prefix = "k1emu.settings."
 
     static let backgroundPresets: [(String, Color)] = [
         ("Void", Color(hex: "0B0B10")),
@@ -58,7 +61,72 @@ final class SettingsStore: ObservableObject {
         ("Ice", Color(hex: "101820"), Color(hex: "A0E7FF"))
     ]
 
-    init() {}
+    init() {
+        load()
+    }
+
+    func resetToDefaults() {
+        backgroundColor = Color(hex: "0B0B10")
+        accentColor = Color(hex: "7C5CFF")
+        joystickColor = Color(hex: "1C1C24")
+        joystickAccent = Color(hex: "00E5FF")
+        backgroundEffect = .liquid
+        useLiquidGlass = true
+        colorScheme = .dark
+        showFPS = true
+        target4KWhenStable = true
+        tvModeEnabled = true
+        autoEnterControllerOnExternalDisplay = true
+        persist()
+    }
+
+    private func load() {
+        if let value = defaults.string(forKey: key("backgroundColor")) { backgroundColor = Color(hex: value) }
+        if let value = defaults.string(forKey: key("accentColor")) { accentColor = Color(hex: value) }
+        if let value = defaults.string(forKey: key("joystickColor")) { joystickColor = Color(hex: value) }
+        if let value = defaults.string(forKey: key("joystickAccent")) { joystickAccent = Color(hex: value) }
+        if let value = defaults.string(forKey: key("backgroundEffect")), let effect = BackgroundEffect(rawValue: value) { backgroundEffect = effect }
+        if defaults.object(forKey: key("useLiquidGlass")) != nil { useLiquidGlass = defaults.bool(forKey: key("useLiquidGlass")) }
+        if defaults.object(forKey: key("showFPS")) != nil { showFPS = defaults.bool(forKey: key("showFPS")) }
+        if defaults.object(forKey: key("target4KWhenStable")) != nil { target4KWhenStable = defaults.bool(forKey: key("target4KWhenStable")) }
+        if defaults.object(forKey: key("tvModeEnabled")) != nil { tvModeEnabled = defaults.bool(forKey: key("tvModeEnabled")) }
+        if defaults.object(forKey: key("autoEnterControllerOnExternalDisplay")) != nil {
+            autoEnterControllerOnExternalDisplay = defaults.bool(forKey: key("autoEnterControllerOnExternalDisplay"))
+        }
+        if let value = defaults.string(forKey: key("colorScheme")) {
+            colorScheme = value == "light" ? .light : value == "system" ? nil : .dark
+        }
+    }
+
+    private func persist() {
+        defaults.set(hex(backgroundColor), forKey: key("backgroundColor"))
+        defaults.set(hex(accentColor), forKey: key("accentColor"))
+        defaults.set(hex(joystickColor), forKey: key("joystickColor"))
+        defaults.set(hex(joystickAccent), forKey: key("joystickAccent"))
+        defaults.set(backgroundEffect.rawValue, forKey: key("backgroundEffect"))
+        defaults.set(useLiquidGlass, forKey: key("useLiquidGlass"))
+        defaults.set(showFPS, forKey: key("showFPS"))
+        defaults.set(target4KWhenStable, forKey: key("target4KWhenStable"))
+        defaults.set(tvModeEnabled, forKey: key("tvModeEnabled"))
+        defaults.set(autoEnterControllerOnExternalDisplay, forKey: key("autoEnterControllerOnExternalDisplay"))
+        if let scheme = colorScheme {
+            defaults.set(scheme == .light ? "light" : "dark", forKey: key("colorScheme"))
+        } else {
+            defaults.set("system", forKey: key("colorScheme"))
+        }
+    }
+
+    private func key(_ name: String) -> String { prefix + name }
+
+    private func hex(_ color: Color) -> String {
+        let ui = UIColor(color)
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
+        guard ui.getRed(&r, green: &g, blue: &b, alpha: &a) else { return "0B0B10" }
+        return String(format: "%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
+    }
 }
 
 extension Color {

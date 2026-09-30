@@ -7,105 +7,123 @@ struct EmuLibraryView: View {
     @EnvironmentObject var romLibrary: ROMLibrary
     @EnvironmentObject var settings: SettingsStore
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 14),
-        GridItem(.flexible(), spacing: 14)
-    ]
-
     var body: some View {
-        VStack(spacing: 0) {
-            // TOP BAR — matches sketch: ? | logo title | + 
-            HStack(spacing: 12) {
-                Button { onToggleSidebar?() } label: {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                }
+        GeometryReader { proxy in
+            ZStack {
+                AnimatedBackground().ignoresSafeArea()
 
-                Button { appState.showFAQ = true } label: {
-                    Image(systemName: "questionmark.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(settings.accentColor)
-                }
+                VStack(spacing: 0) {
+                    topBar
 
-                Spacer()
-
-                HStack(spacing: 8) {
-                    K1Logo(size: 28)
-                    Text("k1emu")
-                        .font(.headline.bold())
-                }
-
-                Spacer()
-
-                Button { appState.showInstallSheet = true } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(settings.accentColor)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-
-            if romLibrary.games.isEmpty {
-                Spacer()
-                emptyState
-                Spacer()
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(romLibrary.games) { game in
-                            GameCard(game: game)
-                                .contextMenu {
-                                    Button { appState.showGameInfo = game } label: {
-                                        Label("Info", systemImage: "info.circle")
-                                    }
-                                    Button { appState.showTweakPickerFor = game } label: {
-                                        Label("Tweaks", systemImage: "slider.horizontal.3")
-                                    }
-                                    Button {} label: {
-                                        Label("Multitask", systemImage: "rectangle.on.rectangle")
-                                    }
-                                    Divider()
-                                    Button(role: .destructive) {
-                                        withAnimation { romLibrary.delete(game) }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
+                    if romLibrary.games.isEmpty {
+                        emptyHome
+                    } else {
+                        ScrollView {
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                                ForEach(romLibrary.games) { game in
+                                    GameCard(game: game)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture { appState.startGame(game) }
+                                        .contextMenu {
+                                            Button { appState.showGameInfo = game } label: {
+                                                Label("Info", systemImage: "info.circle")
+                                            }
+                                            Button { appState.showTweakPickerFor = game } label: {
+                                                Label("Tweaks", systemImage: "slider.horizontal.3")
+                                            }
+                                            Divider()
+                                            Button(role: .destructive) {
+                                                withAnimation { romLibrary.delete(game) }
+                                            } label: {
+                                                Label("Delete", systemImage: "trash")
+                                            }
+                                        }
                                 }
-                                .onTapGesture {
-                                    appState.startGame(game)
-                                }
+                            }
+                            .padding(16)
+                            .padding(.bottom, 100)
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 40)
                 }
             }
+            .frame(width: proxy.size.width, height: proxy.size.height)
         }
     }
 
-    private var emptyState: some View {
-        VStack(spacing: 20) {
-            K1Logo(size: 80)
-            Text("No games yet")
-                .font(.title2.bold())
-            Text("Tap + to add a ROM (.nds, .gba, .n64, .nes…)\nNothing shows until you add something.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
+    private var topBar: some View {
+        HStack(spacing: 12) {
+            K1Logo(size: 40)
 
-            Button { appState.showInstallSheet = true } label: {
-                Label("Install ROM", systemImage: "plus")
-                    .font(.headline)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("k1emu")
+                    .font(.system(size: 22, weight: .black, design: .rounded))
+                Text("Your game library")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Button {
+                appState.showInstallSheet = true
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 19, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 46, height: 46)
+                    .background(settings.accentColor, in: Circle())
+                    .shadow(color: settings.accentColor.opacity(0.35), radius: 12)
+            }
+            .accessibilityLabel("Add ROM")
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
+    }
+
+    private var emptyHome: some View {
+        VStack(spacing: 22) {
+            Spacer()
+
+            ZStack {
+                Circle()
+                    .fill(settings.accentColor.opacity(0.10))
+                    .frame(width: 128, height: 128)
+                    .blur(radius: 3)
+
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(settings.accentColor.opacity(0.45), style: StrokeStyle(lineWidth: 2, dash: [8, 8]))
+                    .frame(width: 92, height: 92)
+
+                Image(systemName: "plus")
+                    .font(.system(size: 38, weight: .light))
+                    .foregroundStyle(settings.accentColor)
+            }
+
+            VStack(spacing: 7) {
+                Text("No games yet")
+                    .font(.system(size: 27, weight: .bold, design: .rounded))
+                Text("Add a ROM to get started!")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                appState.showInstallSheet = true
+            } label: {
+                Label("Add ROM", systemImage: "plus")
+                    .font(.headline.weight(.bold))
+                    .foregroundStyle(.white)
                     .padding(.horizontal, 28)
                     .padding(.vertical, 14)
-                    .background(Capsule().fill(settings.accentColor))
-                    .foregroundStyle(.white)
-                    .shadow(color: settings.accentColor.opacity(0.4), radius: 12, y: 4)
+                    .background(settings.accentColor, in: Capsule())
+                    .shadow(color: settings.accentColor.opacity(0.30), radius: 16, y: 8)
             }
+            .buttonStyle(.plain)
+
+            Spacer()
         }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -114,33 +132,36 @@ struct GameCard: View {
     @EnvironmentObject var settings: SettingsStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
+        VStack(alignment: .leading, spacing: 9) {
+            ZStack(alignment: .topTrailing) {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [settings.accentColor.opacity(0.4), settings.accentColor.opacity(0.08)],
+                            colors: [settings.accentColor.opacity(0.35), settings.accentColor.opacity(0.06)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
                     .aspectRatio(1, contentMode: .fit)
-                    .overlay(
-                        Image(systemName: systemIcon(for: game.system))
-                            .font(.system(size: 34))
-                            .foregroundStyle(.white.opacity(0.95))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(LinearGradient(colors: [.white.opacity(0.25), .clear], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
-                    )
+
+                if let coverURL = game.coverURL {
+                    AsyncImage(url: coverURL) { phase in
+                        if case .success(let image) = phase {
+                            image.resizable().scaledToFill()
+                        } else {
+                            fallbackArtwork
+                        }
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                } else {
+                    fallbackArtwork
+                }
 
                 Text(game.displaySystem)
                     .font(.caption2.bold())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
                     .background(.ultraThinMaterial, in: Capsule())
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(8)
             }
 
@@ -148,16 +169,23 @@ struct GameCard: View {
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
 
-            // RUN button — matches sketch
             HStack {
-                Image(systemName: "play.fill").font(.caption2)
-                Text("Run").font(.caption2.weight(.bold))
+                Image(systemName: "play.fill")
+                Text("Run")
             }
+            .font(.caption2.weight(.bold))
             .foregroundStyle(.white)
             .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.vertical, 7)
             .background(Capsule().fill(settings.accentColor))
         }
+    }
+
+    private var fallbackArtwork: some View {
+        Image(systemName: systemIcon(for: game.system))
+            .font(.system(size: 36, weight: .medium))
+            .foregroundStyle(.white.opacity(0.95))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func systemIcon(for system: String) -> String {

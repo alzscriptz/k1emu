@@ -2,142 +2,58 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>en</string>
-	<key>CFBundleDisplayName</key>
-	<string>k1emu</string>
-	<key>CFBundleExecutable</key>
-	<string>$(EXECUTABLE_NAME)</string>
-	<key>CFBundleIdentifier</key>
-	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-	<key>CFBundleInfoDictionaryVersion</key>
-	<string>6.0</string>
-	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
-	<key>CFBundlePackageType</key>
-	<string>APPL</string>
-	<key>CFBundleShortVersionString</key>
-	<string>1.2.0</string>
-	<key>CFBundleVersion</key>
-	<string>3</string>
-	<key>LSRequiresIPhoneOS</key>
-	<true/>
-	<key>UILaunchScreen</key>
-	<dict/>
-	<key>UIRequiresFullScreen</key>
-	<true/>
-	<key>UIFileSharingEnabled</key>
-	<true/>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
-	<key>UISupportsDocumentBrowser</key>
-	<true/>
+	<key>CFBundleDevelopmentRegion</key><string>en</string>
+	<key>CFBundleDisplayName</key><string>k1emu</string>
+	<key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+	<key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key><string>APPL</string>
+	<key>CFBundleShortVersionString</key><string>1.5.0</string>
+	<key>CFBundleVersion</key><string>5</string>
+	<key>LSRequiresIPhoneOS</key><true/>
+	<key>UILaunchScreen</key><dict/>
+	<key>UIRequiresFullScreen</key><true/>
+	<key>UIFileSharingEnabled</key><true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key><true/>
+	<key>UISupportsDocumentBrowser</key><true/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
-			<key>CFBundleTypeName</key>
-			<string>ROM File</string>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSHandlerRank</key>
-			<string>Owner</string>
+			<key>CFBundleTypeName</key><string>ROM File</string>
+			<key>CFBundleTypeRole</key><string>Viewer</string>
+			<key>LSHandlerRank</key><string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>public.item</string>
-				<string>public.data</string>
-				<string>public.content</string>
-				<string>com.k1emu.rom</string>
-				<string>public.archive</string>
-				<string>public.zip-archive</string>
+				<string>public.item</string><string>public.data</string><string>public.content</string>
+				<string>com.k1emu.rom</string><string>public.archive</string><string>public.zip-archive</string>
 			</array>
 			<key>CFBundleTypeExtensions</key>
 			<array>
-				<string>nds</string>
-				<string>dsi</string>
-				<string>gba</string>
-				<string>gb</string>
-				<string>gbc</string>
-				<string>nes</string>
-				<string>sfc</string>
-				<string>smc</string>
-				<string>n64</string>
-				<string>z64</string>
-				<string>v64</string>
-				<string>iso</string>
-				<string>bin</string>
-				<string>cue</string>
-				<string>zip</string>
-				<string>7z</string>
+				<string>nds</string><string>dsi</string><string>gba</string><string>gb</string><string>gbc</string>
+				<string>nes</string><string>fds</string><string>sfc</string><string>smc</string>
+				<string>n64</string><string>z64</string><string>v64</string><string>iso</string><string>bin</string>
+				<string>cue</string><string>chd</string><string>pbp</string><string>md</string><string>gen</string>
+				<string>smd</string><string>sms</string><string>gg</string><string>pce</string>
+				<string>zip</string><string>7z</string><string>rar</string>
 			</array>
 		</dict>
 	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.k1emu.rom</string>
-			<key>UTTypeDescription</key>
-			<string>Emulator ROM</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-				<string>public.item</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>nds</string>
-					<string>dsi</string>
-					<string>gba</string>
-					<string>gb</string>
-					<string>gbc</string>
-					<string>nes</string>
-					<string>sfc</string>
-					<string>smc</string>
-					<string>n64</string>
-					<string>z64</string>
-					<string>iso</string>
-					<string>bin</string>
-					<string>zip</string>
-				</array>
-			</dict>
-		</dict>
-	</array>
-	<key>UTImportedTypeDeclarations</key>
-	<array>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.k1emu.rom</string>
-			<key>UTTypeDescription</key>
-			<string>Emulator ROM</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>nds</string>
-					<string>gba</string>
-					<string>nes</string>
-					<string>n64</string>
-					<string>zip</string>
-				</array>
+			<key>UTTypeIdentifier</key><string>com.k1emu.rom</string>
+			<key>UTTypeDescription</key><string>Emulator ROM</string>
+			<key>UTTypeConformsTo</key><array><string>public.data</string><string>public.item</string></array>
+			<key>UTTypeTagSpecification</key><dict><key>public.filename-extension</key>
+			<array><string>nds</string><string>dsi</string><string>gba</string><string>gb</string><string>gbc</string>
+			<string>nes</string><string>sfc</string><string>smc</string><string>n64</string><string>z64</string>
+			<string>v64</string><string>iso</string><string>bin</string><string>cue</string><string>zip</string><string>7z</string></array>
 			</dict>
 		</dict>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-	</dict>
+	<array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
+	<key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict>
 </plist>
