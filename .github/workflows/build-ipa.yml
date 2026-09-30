@@ -77,6 +77,7 @@ jobs:
           </dict></plist>
           PLIST
 
+          chmod +x Payload/k1emu.app/Frameworks/libnds.framework/libnds
           install_name_tool -id "@rpath/libnds.framework/libnds" Payload/k1emu.app/Frameworks/libnds.framework/libnds || true
           test -x Payload/k1emu.app/Frameworks/libnds.framework/libnds
           find Payload/k1emu.app/Frameworks -maxdepth 2 -print
