@@ -35,14 +35,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p Cores
-          # Download libnds.dylib built by alzscriptz/compiler
-          gh release download latest-build \
-            --repo alzscriptz/compiler \
-            --pattern 'libnds.dylib' \
-            --dir Cores \
-            --clobber || echo "libnds download skipped"
+          gh release download latest-build --repo alzscriptz/compiler --pattern 'libnds.dylib' --dir Cores --clobber || echo skipped
           ls -lah Cores/ || true
-          file Cores/libnds.dylib || true
 
       - name: Package IPA with dylibs
         run: |
@@ -59,21 +53,18 @@ jobs:
             chmod +x Payload/k1emu.app/k1emu
           fi
           find Cores k1emu/Frameworks -name '*.dylib' 2>/dev/null | while read f; do
-            echo "Embedding $f"
             cp "$f" Payload/k1emu.app/Frameworks/
           done
-          ls -la Payload/k1emu.app/Frameworks/ || true
           zip -qr k1emu.ipa Payload
           ls -lah k1emu.ipa
 
-      - name: Publish Release v1.4.0
+      - name: Publish Release v1.5.0
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "k1emu v1.4.0 - Includes libnds.dylib (arm64 iOS) from compiler repo. CoreLoader dlopens Frameworks/libnds.dylib." > notes.txt
-          if gh release view v1.4.0; then
-            gh release upload v1.4.0 k1emu.ipa --clobber
+          echo "k1emu v1.5.0 - Controller UI matches photo (LT/LB RT/RB, D-pad, GAME, YXBA, sticks, Browser). Clean core name display." > notes.txt
+          if gh release view v1.5.0; then
+            gh release upload v1.5.0 k1emu.ipa --clobber
           else
-            gh release create v1.4.0 k1emu.ipa --title "k1emu v1.4.0" --notes-file notes.txt
+            gh release create v1.5.0 k1emu.ipa --title "k1emu v1.5.0" --notes-file notes.txt
           fi
-          gh release view v1.4.0
