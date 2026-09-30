@@ -28,12 +28,11 @@ final class AppState: ObservableObject {
         currentGame = game
         isPlaying = true
         loadedTweakName = nil
-        // Try load matching dylib for this system
         let ok = CoreLoader.shared.loadCore(for: game.system)
-        if ok {
-            coreStatus = "Core: \(CoreLoader.shared.loadedCoreName ?? "?")"
+        if ok, let name = CoreLoader.shared.loadedCoreName {
+            coreStatus = name
         } else {
-            coreStatus = CoreLoader.shared.lastError ?? "No dylib for \(game.system)"
+            coreStatus = CoreLoader.shared.lastError ?? "No core"
         }
     }
 

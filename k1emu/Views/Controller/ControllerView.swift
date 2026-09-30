@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// showGamePanel true  = ON PHONE MODE (game + controls)
-/// showGamePanel false = ON TV MODE (controller only)
+/// Layout matches the reference image:
+/// LT/LB · RT/RB on top, D-pad left, GAME center, YXBA right,
+/// left stick · Browser · right stick on bottom.
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -12,32 +13,39 @@ struct ControllerView: View {
     @State private var leftStick: CGSize = .zero
     @State private var rightStick: CGSize = .zero
 
+    // Button colors from the photo
+    private let yColor = Color(red: 1.0, green: 0.84, blue: 0.2)      // yellow
+    private let xColor = Color(red: 0.35, green: 0.85, blue: 0.95)    // cyan
+    private let bColor = Color(red: 0.95, green: 0.25, blue: 0.25)    // red
+    private let aColor = Color(red: 0.25, green: 0.85, blue: 0.45)    // green
+    private let shoulderColor = Color(red: 0.78, green: 0.82, blue: 0.88)
+
     var body: some View {
         ZStack {
-            settings.joystickColor.ignoresSafeArea()
+            // Clean white / light background like the photo
+            Color.white.ignoresSafeArea()
 
             if appState.isBrowserMode {
                 BrowserModeView()
-            } else if showGamePanel {
-                onPhoneLayout
             } else {
-                onTVLayout
+                photoLayout
             }
 
+            // FPS top-right
             VStack {
                 HStack {
                     Spacer()
                     FPSOverlay()
-                        .padding(.trailing, 12)
-                        .padding(.top, 8)
+                        .padding(.trailing, 14)
+                        .padding(.top, 10)
                 }
                 Spacer()
             }
 
             if appState.isMouseMode {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(Color.blue, lineWidth: 4)
-                    .padding(4)
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.blue, lineWidth: 3)
+                    .padding(8)
                     .allowsHitTesting(false)
             }
         }
@@ -45,242 +53,257 @@ struct ControllerView: View {
         .persistentSystemOverlays(.hidden)
     }
 
-    private var onPhoneLayout: some View {
+    // MARK: - Exact photo layout
+    private var photoLayout: some View {
         VStack(spacing: 0) {
-            topBar
-
-            HStack(alignment: .center, spacing: 6) {
-                VStack(spacing: 16) {
-                    DPadView(accent: settings.joystickAccent).scaleEffect(0.9)
-                    AnalogStickView(offset: $leftStick, accent: settings.joystickAccent).scaleEffect(0.85)
+            // Top bar: menu / TV / quit (small, not in photo but needed)
+            HStack {
+                Button { appState.showInGameMenu = true } label: {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.black.opacity(0.45))
+                        .frame(width: 36, height: 36)
                 }
-                .frame(width: 110)
-
-                gamePanel
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 220)
-
-                VStack(spacing: 12) {
-                    HStack(spacing: 10) {
-                        FaceButton(label: "Y", color: .yellow, size: 40)
-                        FaceButton(label: "X", color: .blue, size: 40)
-                    }
-                    HStack(spacing: 10) {
-                        FaceButton(label: "B", color: .red, size: 40)
-                        FaceButton(label: "A", color: .green, size: 40)
-                    }
-                    AnalogStickView(offset: $rightStick, accent: settings.joystickAccent).scaleEffect(0.75)
-                    HStack(spacing: 8) {
-                        TriggerButton(label: "L")
-                        TriggerButton(label: "R")
+                Spacer()
+                if settings.tvModeEnabled {
+                    Button {
+                        appState.isTVModeActive.toggle()
+                    } label: {
+                        Image(systemName: appState.isTVModeActive ? "iphone" : "tv")
+                            .font(.body)
+                            .foregroundStyle(.black.opacity(0.45))
                     }
                 }
-                .frame(width: 110)
+                Button { appState.quitGame() } label: {
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.black.opacity(0.45))
+                        .frame(width: 36, height: 36)
+                }
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
 
             Spacer(minLength: 8)
 
+            // —— SHOULDERS: LT/LB ····· RT/RB ——
             HStack {
-                ControllerButton(systemName: "minus", size: 32) {}
-                Spacer()
-                Text(game.name)
-                    .font(.caption2.bold())
-                    .foregroundStyle(.white.opacity(0.7))
-                    .lineLimit(1)
-                Spacer()
-                ControllerButton(systemName: "plus", size: 32) {}
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 16)
-        }
-    }
-
-    private var onTVLayout: some View {
-        VStack(spacing: 0) {
-            topBar
-            Text("TV MODE — game on external display")
-                .font(.caption2)
-                .foregroundStyle(settings.joystickAccent)
-                .padding(.top, 4)
-            Spacer()
-            HStack(alignment: .center, spacing: 0) {
-                VStack(spacing: 22) {
-                    DPadView(accent: settings.joystickAccent)
-                    AnalogStickView(offset: $leftStick, accent: settings.joystickAccent)
+                VStack(spacing: 6) {
+                    ShoulderPill(label: "LT", color: shoulderColor, isTrigger: true)
+                    ShoulderPill(label: "LB", color: shoulderColor, isTrigger: false)
                 }
-                .frame(maxWidth: .infinity)
-                VStack(spacing: 14) {
-                    HStack(spacing: 16) {
-                        FaceButton(label: "Y", color: .yellow, size: 52)
-                        FaceButton(label: "X", color: .blue, size: 52)
-                    }
-                    HStack(spacing: 16) {
-                        FaceButton(label: "B", color: .red, size: 52)
-                        FaceButton(label: "A", color: .green, size: 52)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                VStack(spacing: 22) {
-                    AnalogStickView(offset: $rightStick, accent: settings.joystickAccent)
-                    HStack(spacing: 12) {
-                        TriggerButton(label: "LT")
-                        TriggerButton(label: "RT")
-                    }
-                }
-                .frame(maxWidth: .infinity)
-            }
-            Spacer()
-            HStack {
-                ControllerButton(systemName: "minus", size: 34) {}
                 Spacer()
-                Text(appState.isMouseMode ? "MOUSE" : "CONTROLLER")
-                    .font(.caption2.bold())
-                    .foregroundStyle(settings.joystickAccent)
-                Spacer()
-                ControllerButton(systemName: "plus", size: 34) {}
+                VStack(spacing: 6) {
+                    ShoulderPill(label: "RT", color: shoulderColor, isTrigger: true)
+                    ShoulderPill(label: "RB", color: shoulderColor, isTrigger: false)
+                }
             }
-            .padding(.horizontal, 28)
-            .padding(.bottom, 20)
-        }
-    }
+            .padding(.horizontal, 36)
 
-    private var gamePanel: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.black)
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(settings.joystickAccent.opacity(0.4), lineWidth: 1.5)
+            Spacer(minLength: 16)
 
-            VStack(spacing: 6) {
-                Image(systemName: "rectangle.split.2x1.fill")
-                    .font(.title)
-                    .foregroundStyle(settings.accentColor.opacity(0.85))
-                Text("Emulated Game")
-                    .font(.caption.bold())
-                    .foregroundStyle(.white.opacity(0.9))
-                Text(game.name)
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.5))
-                    .lineLimit(1)
-                    .padding(.horizontal, 8)
-                // Core status from dylib loader
-                Text(appState.coreStatus)
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundStyle(
-                        CoreLoader.shared.loadedCoreName != nil
-                        ? Color.green.opacity(0.9)
-                        : Color.orange.opacity(0.9)
-                    )
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 6)
+            // —— MID: D-pad | GAME | YXBA ——
+            HStack(alignment: .center, spacing: 12) {
+                // D-pad (photo: plus shape, black)
+                PhotoDPad()
+                    .frame(width: 88, height: 88)
+
+                // GAME screen (center black panel)
+                gameScreen
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 130)
+
+                // Face buttons diamond: Y top, X left, B right, A bottom
+                PhotoFaceButtons(
+                    y: yColor, x: xColor, b: bColor, a: aColor
+                )
+                .frame(width: 100, height: 100)
             }
-        }
-    }
+            .padding(.horizontal, 16)
 
-    private var topBar: some View {
-        HStack {
-            ControllerButton(systemName: "line.3.horizontal", size: 40) {
-                appState.showInGameMenu = true
-            }
-            Spacer()
+            // Three dots under GAME (like photo)
             HStack(spacing: 8) {
-                ControllerButton(systemName: "rectangle.on.rectangle", size: 36) {
-                    appState.isMouseMode.toggle()
-                }
-                ControllerButton(systemName: "rectangle.on.rectangle", size: 36) {
-                    appState.isMouseMode.toggle()
-                }
+                Circle().fill(Color.black.opacity(0.35)).frame(width: 6, height: 6)
+                Circle().fill(Color.black.opacity(0.35)).frame(width: 6, height: 6)
+                Circle().fill(Color.black.opacity(0.35)).frame(width: 6, height: 6)
             }
-            Spacer()
-            Button {
-                appState.isBrowserMode.toggle()
-            } label: {
-                ZStack {
-                    Circle().fill(settings.joystickAccent.opacity(0.25)).frame(width: 40, height: 40)
-                    Image(systemName: "safari.fill").font(.body).foregroundStyle(settings.joystickAccent)
+            .padding(.top, 10)
+
+            Spacer(minLength: 18)
+
+            // —— BOTTOM: Left stick | Browser | Right stick ——
+            HStack(alignment: .center, spacing: 16) {
+                PhotoStick(offset: $leftStick)
+                    .frame(width: 86, height: 86)
+
+                // Browser button (center, black rounded rect)
+                Button {
+                    appState.isBrowserMode.toggle()
+                } label: {
+                    Text("Browser")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .frame(width: 120, height: 52)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.black)
+                        )
                 }
+
+                PhotoStick(offset: $rightStick)
+                    .frame(width: 86, height: 86)
             }
-            if settings.tvModeEnabled {
-                ControllerButton(systemName: appState.isTVModeActive ? "iphone" : "tv", size: 36) {
-                    appState.isTVModeActive.toggle()
+            .padding(.horizontal, 20)
+
+            Spacer(minLength: 20)
+
+            // Game name footer
+            Text(game.name)
+                .font(.caption2)
+                .foregroundStyle(.black.opacity(0.4))
+                .lineLimit(1)
+                .padding(.bottom, 12)
+        }
+    }
+
+    private var gameScreen: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.black)
+
+            if showGamePanel {
+                VStack(spacing: 6) {
+                    Text("GAME")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+
+                    Text(game.displaySystem)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.55))
+
+                    // Clean core status — no "framework" noise
+                    if let name = CoreLoader.shared.loadedCoreName {
+                        Text(cleanCoreName(name))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(Color.green.opacity(0.85))
+                    } else {
+                        Text("No core loaded")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.orange.opacity(0.85))
+                    }
                 }
-            }
-            ControllerButton(systemName: "xmark", size: 36) {
-                appState.quitGame()
+            } else {
+                VStack(spacing: 4) {
+                    Text("TV MODE")
+                        .font(.headline.bold())
+                        .foregroundStyle(.white)
+                    Text("Game on external display")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.5))
+                }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 6)
+    }
+
+    private func cleanCoreName(_ raw: String) -> String {
+        var s = raw
+        // Strip paths / framework noise
+        if let last = s.split(separator: "/").last { s = String(last) }
+        s = s.replacingOccurrences(of: ".framework", with: "")
+        s = s.replacingOccurrences(of: ".dylib", with: "")
+        // Fix common typo display
+        if s.lowercased().contains("libdns") { s = "libnds" }
+        return s
     }
 }
 
-struct ControllerButton: View {
-    let systemName: String
-    let size: CGFloat
-    let action: () -> Void
-    @EnvironmentObject var settings: SettingsStore
+// MARK: - Photo-matched components
 
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: size * 0.4))
-                .foregroundStyle(.white)
-                .frame(width: size, height: size)
-                .background(Circle().fill(Color.white.opacity(0.08)).shadow(color: .black.opacity(0.4), radius: 3, y: 2))
-                .overlay(Circle().stroke(settings.joystickAccent.opacity(0.4), lineWidth: 1.2))
-        }
-    }
-}
-
-struct FaceButton: View {
+struct ShoulderPill: View {
     let label: String
     let color: Color
-    var size: CGFloat = 52
+    let isTrigger: Bool
 
     var body: some View {
         Text(label)
-            .font(.system(size: size * 0.35, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(Circle().fill(color.opacity(0.85)).shadow(color: color.opacity(0.45), radius: 5, y: 2))
+            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .foregroundStyle(Color(white: 0.35))
+            .frame(width: isTrigger ? 52 : 56, height: isTrigger ? 22 : 26)
+            .background(
+                Group {
+                    if isTrigger {
+                        // Trapezoid-ish look for triggers
+                        Capsule().fill(color)
+                    } else {
+                        RoundedRectangle(cornerRadius: 6, style: .continuous).fill(color)
+                    }
+                }
+            )
     }
 }
 
-struct TriggerButton: View {
-    let label: String
-    @EnvironmentObject var settings: SettingsStore
-
-    var body: some View {
-        Text(label)
-            .font(.caption2.bold())
-            .foregroundStyle(.white)
-            .frame(width: 44, height: 24)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(settings.joystickAccent.opacity(0.3)))
-    }
-}
-
-struct DPadView: View {
-    let accent: Color
+struct PhotoDPad: View {
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.14)).frame(width: 32, height: 96)
-            RoundedRectangle(cornerRadius: 5).fill(Color.white.opacity(0.14)).frame(width: 96, height: 32)
-            Circle().fill(accent.opacity(0.35)).frame(width: 24, height: 24)
+            // Vertical arm
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.black)
+                .frame(width: 28, height: 84)
+            // Horizontal arm
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.black)
+                .frame(width: 84, height: 28)
+            // Center nub
+            Circle()
+                .fill(Color.black)
+                .frame(width: 22, height: 22)
         }
     }
 }
 
-struct AnalogStickView: View {
-    @Binding var offset: CGSize
-    let accent: Color
-    private let maxTravel: CGFloat = 30
+struct PhotoFaceButtons: View {
+    let y: Color
+    let x: Color
+    let b: Color
+    let a: Color
 
     var body: some View {
         ZStack {
-            Circle().fill(Color.white.opacity(0.1)).frame(width: 88, height: 88)
+            // Y top
+            face(y, "Y").offset(y: -32)
+            // X left
+            face(x, "X").offset(x: -32)
+            // B right
+            face(b, "B").offset(x: 32)
+            // A bottom
+            face(a, "A").offset(y: 32)
+        }
+    }
+
+    private func face(_ color: Color, _ label: String) -> some View {
+        Text(label)
+            .font(.system(size: 14, weight: .bold, design: .rounded))
+            .foregroundStyle(.white)
+            .frame(width: 36, height: 36)
+            .background(Circle().fill(color))
+    }
+}
+
+struct PhotoStick: View {
+    @Binding var offset: CGSize
+    private let maxTravel: CGFloat = 22
+
+    var body: some View {
+        ZStack {
+            // Outer ring (light gray like photo)
             Circle()
-                .fill(LinearGradient(colors: [accent.opacity(0.85), accent.opacity(0.4)], startPoint: .top, endPoint: .bottom))
-                .frame(width: 48, height: 48)
+                .stroke(Color(white: 0.75), lineWidth: 8)
+                .background(Circle().fill(Color(white: 0.92)))
+
+            // Inner black stick
+            Circle()
+                .fill(Color.black)
+                .frame(width: 52, height: 52)
                 .offset(offset)
                 .gesture(
                     DragGesture()
@@ -290,10 +313,11 @@ struct AnalogStickView: View {
                             offset = CGSize(width: x, height: y)
                         }
                         .onEnded { _ in
-                            withAnimation(.spring(response: 0.25)) { offset = .zero }
+                            withAnimation(.spring(response: 0.25)) {
+                                offset = .zero
+                            }
                         }
                 )
-                .shadow(color: accent.opacity(0.45), radius: 6)
         }
     }
 }
