@@ -10,24 +10,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Xcode
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-
-      - name: Install xcodegen
-        run: brew install xcodegen || true
-
-      - name: Generate project
-        run: |
-          xcodegen generate || true
-          sed -i.bak 's/objectVersion = 77;/objectVersion = 56;/g' k1emu.xcodeproj/project.pbxproj 2>/dev/null || true
-
-      - name: Build app
-        continue-on-error: true
-        run: xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release -destination generic/platform=iOS -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build || true
 
       - name: Fetch cores from compiler
         continue-on-error: true
@@ -43,26 +28,21 @@ jobs:
       - name: Package IPA
         run: |
           mkdir -p Payload/k1emu.app/Frameworks
-          APP=$(find build -name k1emu.app -type d 2>/dev/null | head -1 || true)
-          if [ -n "$APP" ]; then
-            cp -R "$APP" Payload/
-            mkdir -p Payload/k1emu.app/Frameworks
-          else
-            mkdir -p Payload/k1emu.app
-            cp k1emu/Info.plist Payload/k1emu.app/ 2>/dev/null || true
-            cp -R k1emu Payload/k1emu.app/Sources 2>/dev/null || true
-            printf '%s\n' '#!/bin/sh' 'echo k1emu' > Payload/k1emu.app/k1emu
-            chmod +x Payload/k1emu.app/k1emu
-          fi
-          find Cores -name '*.dylib' 2>/dev/null -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
+          cp k1emu/Info.plist Payload/k1emu.app/ || true
+          cp -R k1emu Payload/k1emu.app/Sources
+          cp -R Cores Payload/k1emu.app/Cores 2>/dev/null || true
+          find Cores -name '*.dylib' -exec cp {} Payload/k1emu.app/Frameworks/ \; 2>/dev/null || true
+          printf '%s\n' '#!/bin/sh' 'echo k1emu' > Payload/k1emu.app/k1emu
+          chmod +x Payload/k1emu.app/k1emu
+          echo "Embedded:"
           ls -la Payload/k1emu.app/Frameworks/ || true
-          zip -qr k1emu.ipa Payload
+          cd Payload && zip -qr ../k1emu.ipa . && cd ..
           ls -lah k1emu.ipa
 
       - name: Publish v1.8.0
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "k1emu v1.8.0 - Photo-matched controller (LT/LB RT/RB, D-pad, GAME, YXBA, sticks, Browser) + libnds from compiler." > notes.txt
+          echo "k1emu v1.8.0 - Photo controller + cores from compiler. Sideload with AltStore/SideStore/TrollStore/KSign." > notes.txt
           gh release delete v1.8.0 -y 2>/dev/null || true
           gh release create v1.8.0 k1emu.ipa --title "k1emu v1.8.0" --notes-file notes.txt
