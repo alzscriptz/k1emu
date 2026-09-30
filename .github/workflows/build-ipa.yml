@@ -37,8 +37,13 @@ jobs:
         run: |
           set -euo pipefail
           test -f Cores/libnds.dylib.gz.b64
-          base64 -D Cores/libnds.dylib.gz.b64 > Cores/libnds.dylib.gz
-          gzip -dc Cores/libnds.dylib.gz > Cores/libnds.dylib
+          python3 - <<'PY'
+          import base64, gzip
+          from pathlib import Path
+          encoded = Path("Cores/libnds.dylib.gz.b64").read_text().strip()
+          compressed = base64.b64decode(encoded)
+          Path("Cores/libnds.dylib").write_bytes(gzip.decompress(compressed))
+          PY
           test -f Cores/libnds.dylib
           echo "Bundled NDS core:"
           ls -lh Cores/libnds.dylib
