@@ -30,24 +30,16 @@ jobs:
       - name: Build app
         run: |
           set -euo pipefail
-          xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release \
-            -destination generic/platform=iOS -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+          xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release             -destination generic/platform=iOS -derivedDataPath build             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
 
-      - name: Fetch latest NDS core from private compiler
-        env:
-          GH_TOKEN: ${{ secrets.COMPILER_TOKEN || github.token }}
+      - name: Restore bundled NDS core
         run: |
           set -euo pipefail
-          rm -rf Cores
-          mkdir -p Cores
-          gh release download latest-build \
-            --repo alzscriptz/compiler \
-            --pattern 'libnds.dylib' \
-            --dir Cores \
-            --clobber
+          test -f Cores/libnds.dylib.gz.b64
+          base64 --decode Cores/libnds.dylib.gz.b64 > Cores/libnds.dylib.gz
+          gzip -dc Cores/libnds.dylib.gz > Cores/libnds.dylib
           test -f Cores/libnds.dylib
-          echo "Downloaded NDS core:"
+          echo "Bundled NDS core:"
           ls -lh Cores/libnds.dylib
           file Cores/libnds.dylib
           lipo -info Cores/libnds.dylib
@@ -60,8 +52,10 @@ jobs:
           APP=$(find build -name k1emu.app -type d | head -1)
           test -n "$APP"
           cp -R "$APP" Payload/k1emu.app
+
           mkdir -p Payload/k1emu.app/Frameworks/libnds.framework
           cp Cores/libnds.dylib Payload/k1emu.app/Frameworks/libnds.framework/libnds
+
           cat > Payload/k1emu.app/Frameworks/libnds.framework/Info.plist <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -76,6 +70,7 @@ jobs:
             <key>CFBundleVersion</key><string>1</string>
           </dict></plist>
           PLIST
+
           install_name_tool -id "@rpath/libnds.framework/libnds" Payload/k1emu.app/Frameworks/libnds.framework/libnds || true
           test -x Payload/k1emu.app/Frameworks/libnds.framework/libnds
           find Payload/k1emu.app/Frameworks -maxdepth 2 -print
@@ -89,7 +84,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="v1.7.1"
-          NOTES="k1emu v1.7.1 — fixes iOS NDS core packaging and switches phone controls to Xbox-style touch layout."
+          NOTES="k1emu v1.7.1 — bundles the NDS core directly and uses Xbox-style phone controls."
           TARGET="$GITHUB_SHA"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" k1emu.ipa --clobber
