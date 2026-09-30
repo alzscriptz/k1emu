@@ -27,16 +27,17 @@ jobs:
 
       - name: Build app
         continue-on-error: true
-        run: |
-          xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release -destination generic/platform=iOS -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build || true
+        run: xcodebuild -project k1emu.xcodeproj -scheme k1emu -configuration Release -destination generic/platform=iOS -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build || true
 
-      - name: Fetch cores
+      - name: Fetch all cores from compiler
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p Cores
-          gh release download latest-build --repo alzscriptz/compiler --pattern 'libnds.dylib' --dir Cores --clobber || true
+          for name in libnds libgba libnes libsnes; do
+            gh release download latest-build --repo alzscriptz/compiler --pattern "${name}.dylib" --dir Cores --clobber 2>/dev/null || true
+          done
           ls -lah Cores || true
 
       - name: Package IPA
@@ -54,12 +55,14 @@ jobs:
             chmod +x Payload/k1emu.app/k1emu
           fi
           find Cores -name '*.dylib' 2>/dev/null -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
+          echo "Frameworks contents:"
+          ls -la Payload/k1emu.app/Frameworks/ || true
           zip -qr k1emu.ipa Payload
           ls -lah k1emu.ipa
 
-      - name: Publish v1.6.0
+      - name: Publish v1.7.0
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Controller matches photo: LT/LB RT/RB, D-pad, GAME panel, YXBA, sticks, Browser button." > notes.txt
-          gh release create v1.6.0 k1emu.ipa --title "k1emu v1.6.0" --notes-file notes.txt || gh release upload v1.6.0 k1emu.ipa --clobber
+          echo "v1.7.0 - Photo controller + libnds/libgba/libnes/libsnes from compiler." > notes.txt
+          gh release create v1.7.0 k1emu.ipa --title "k1emu v1.7.0" --notes-file notes.txt 2>/dev/null || gh release upload v1.7.0 k1emu.ipa --clobber
