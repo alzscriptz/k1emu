@@ -22,6 +22,12 @@ struct EmulatorPlayView: View {
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+        .task {
+            _ = CoreLoader.shared.loadCore(for: game.system)
+        }
+        .onDisappear {
+            CoreLoader.shared.unload()
+        }
     }
 
     private var controllerSurface: some View {
