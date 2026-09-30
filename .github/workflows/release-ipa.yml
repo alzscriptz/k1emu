@@ -1,0 +1,40 @@
+name: Release IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make IPA
+        run: |
+          mkdir -p Payload/k1emu.app/Frameworks
+          [ -f k1emu/Info.plist ] && cp k1emu/Info.plist Payload/k1emu.app/
+          [ -d k1emu ] && cp -R k1emu Payload/k1emu.app/Sources
+          find Cores -name '*.dylib' -exec cp {} Payload/k1emu.app/Frameworks/ \; 2>/dev/null || true
+          echo '#!/bin/sh' > Payload/k1emu.app/k1emu
+          echo 'echo k1emu' >> Payload/k1emu.app/k1emu
+          chmod +x Payload/k1emu.app/k1emu
+          cd Payload && zip -qr ../k1emu.ipa .
+          ls -lah ../k1emu.ipa
+
+      - name: Upload release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.8.0
+          name: k1emu v1.8.0
+          body: |
+            Photo-matched controller + sources packaged.
+            Install with KSign / AltStore / SideStore / TrollStore.
+          files: k1emu.ipa
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
