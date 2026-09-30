@@ -12,37 +12,30 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Fetch cores from compiler
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p Cores
-          for name in libnds libgba libnes libsnes; do
-            gh release download latest-build --repo alzscriptz/compiler --pattern "${name}.dylib" --dir Cores --clobber 2>/dev/null || true
-          done
-          ls -lah Cores || true
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Package IPA
         run: |
+          set -eux
           mkdir -p Payload/k1emu.app/Frameworks
-          cp k1emu/Info.plist Payload/k1emu.app/ || true
-          cp -R k1emu Payload/k1emu.app/Sources
-          cp -R Cores Payload/k1emu.app/Cores 2>/dev/null || true
-          find Cores -name '*.dylib' -exec cp {} Payload/k1emu.app/Frameworks/ \; 2>/dev/null || true
+          if [ -f k1emu/Info.plist ]; then cp k1emu/Info.plist Payload/k1emu.app/; fi
+          if [ -d k1emu ]; then cp -R k1emu Payload/k1emu.app/Sources; fi
+          if [ -d Cores ]; then
+            find Cores -name '*.dylib' -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
+          fi
           printf '%s\n' '#!/bin/sh' 'echo k1emu' > Payload/k1emu.app/k1emu
           chmod +x Payload/k1emu.app/k1emu
-          echo "Embedded:"
-          ls -la Payload/k1emu.app/Frameworks/ || true
-          cd Payload && zip -qr ../k1emu.ipa . && cd ..
+          (cd Payload && zip -qr ../k1emu.ipa .)
           ls -lah k1emu.ipa
 
-      - name: Publish v1.8.0
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.8.0
+          name: k1emu v1.8.0
+          body: Photo controller layout + sources. Sideload via KSign/AltStore/SideStore.
+          files: k1emu.ipa
+          make_latest: true
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "k1emu v1.8.0 - Photo controller + cores from compiler. Sideload with AltStore/SideStore/TrollStore/KSign." > notes.txt
-          gh release delete v1.8.0 -y 2>/dev/null || true
-          gh release create v1.8.0 k1emu.ipa --title "k1emu v1.8.0" --notes-file notes.txt
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
