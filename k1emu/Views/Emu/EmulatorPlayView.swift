@@ -90,7 +90,7 @@ struct EmulatorPlayView: View {
     // No +/- symbols and no square button boxes.
     private var phoneControls: some View {
         HStack(alignment: .bottom) {
-            DPadView()
+            TouchDPadView()
                 .frame(width: 126, height: 126)
 
             Spacer()
@@ -107,7 +107,7 @@ struct EmulatorPlayView: View {
     }
 }
 
-private struct DPadView: View {
+private struct TouchDPadView: View {
     var body: some View {
         ZStack {
             Circle()
