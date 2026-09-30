@@ -5,6 +5,7 @@ on:
     branches: [main, ui-overhaul-2026]
   workflow_dispatch:
 
+# The NDS core is committed under Cores/ so CI needs no compiler-repo token.
 permissions:
   contents: write
 
