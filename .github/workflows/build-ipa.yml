@@ -39,13 +39,18 @@ jobs:
           GH_TOKEN: ${{ secrets.COMPILER_TOKEN || github.token }}
         run: |
           set -euo pipefail
+          rm -rf Cores
           mkdir -p Cores
           gh release download latest-build \
             --repo alzscriptz/compiler \
             --pattern 'libnds.dylib' \
             --dir Cores \
-            --clobber || echo "Compiler core unavailable; packaging continues without libnds.dylib"
-          ls -lah Cores || true
+            --clobber
+          test -f Cores/libnds.dylib
+          echo "Downloaded NDS core:"
+          ls -lh Cores/libnds.dylib
+          file Cores/libnds.dylib
+          lipo -info Cores/libnds.dylib
 
       - name: Package IPA
         run: |
@@ -55,8 +60,25 @@ jobs:
           APP=$(find build -name k1emu.app -type d | head -1)
           test -n "$APP"
           cp -R "$APP" Payload/k1emu.app
-          mkdir -p Payload/k1emu.app/Frameworks
-          find Cores -name '*.dylib' -type f -maxdepth 1 -print -exec cp {} Payload/k1emu.app/Frameworks/ \;
+          mkdir -p Payload/k1emu.app/Frameworks/libnds.framework
+          cp Cores/libnds.dylib Payload/k1emu.app/Frameworks/libnds.framework/libnds
+          cat > Payload/k1emu.app/Frameworks/libnds.framework/Info.plist <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleDevelopmentRegion</key><string>en</string>
+            <key>CFBundleExecutable</key><string>libnds</string>
+            <key>CFBundleIdentifier</key><string>com.k1emu.core.nds</string>
+            <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+            <key>CFBundleName</key><string>libnds</string>
+            <key>CFBundlePackageType</key><string>FMWK</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>CFBundleVersion</key><string>1</string>
+          </dict></plist>
+          PLIST
+          install_name_tool -id "@rpath/libnds.framework/libnds" Payload/k1emu.app/Frameworks/libnds.framework/libnds || true
+          test -x Payload/k1emu.app/Frameworks/libnds.framework/libnds
+          find Payload/k1emu.app/Frameworks -maxdepth 2 -print
           zip -qr k1emu.ipa Payload
           ls -lh k1emu.ipa
 
@@ -66,11 +88,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v1.7.0"
-          NOTES="k1emu v1.7.0 — visual overhaul matching the 16:9 wireframe: home, settings, tweak lab, phone gameplay and TV display."
+          TAG="v1.7.1"
+          NOTES="k1emu v1.7.1 — fixes iOS NDS core packaging and switches phone controls to Xbox-style touch layout."
           TARGET="$GITHUB_SHA"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" k1emu.ipa --clobber
           else
-            gh release create "$TAG" k1emu.ipa --target "$TARGET" --title "k1emu v1.7.0" --notes "$NOTES"
+            gh release create "$TAG" k1emu.ipa --target "$TARGET" --title "k1emu v1.7.1" --notes "$NOTES"
           fi
