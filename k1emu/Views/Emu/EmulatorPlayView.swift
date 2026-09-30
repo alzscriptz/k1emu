@@ -5,37 +5,27 @@ struct EmulatorPlayView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var settings: SettingsStore
 
-    @State private var coreLoaded = false
-
     var body: some View {
-        GeometryReader { proxy in
-            ZStack {
-                Color.white.ignoresSafeArea()
+        ZStack {
+            Color.white.ignoresSafeArea()
 
-                controllerSurface
-                    .frame(width: 1536, height: 720)
-                    .aspectRatio(1536.0 / 720.0, contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            controllerSurface
+                .frame(width: 1536, height: 720)
+                .aspectRatio(1536.0 / 720.0, contentMode: .fit)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                FPSOverlay()
-                    .padding(.top, 12)
-                    .padding(.trailing, 18)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            }
+            // FPS is the only overlay that is not part of the controller artwork.
+            FPSOverlay()
+                .padding(.top, 12)
+                .padding(.trailing, 18)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .task {
-            coreLoaded = CoreLoader.shared.loadCore(for: game.system)
-        }
-        .onDisappear {
-            CoreLoader.shared.unload()
-        }
     }
 
     private var controllerSurface: some View {
         ZStack {
-            // Shoulder controls, matching the supplied reference.
             ShoulderControl(title: "LT", shape: .trigger)
                 .position(x: 296, y: 54)
 
@@ -48,26 +38,21 @@ struct EmulatorPlayView: View {
             ShoulderControl(title: "RB", shape: .bumper)
                 .position(x: 1240, y: 122)
 
-            // Center game display.
-            GameViewport(game: game, coreLoaded: coreLoaded)
+            GameViewport(game: game)
                 .position(x: 768, y: 260)
 
-            // Large black D-pad on the left.
             PhotoDPad()
                 .position(x: 280, y: 278)
 
-            // Xbox face-button diamond on the right.
             PhotoFaceButtons()
                 .position(x: 1260, y: 278)
 
-            // Large analog sticks along the bottom.
             PhotoThumbstick()
                 .position(x: 275, y: 570)
 
             PhotoThumbstick()
                 .position(x: 1260, y: 570)
 
-            // Reference's three-dot indicator and Browser button.
             HStack(spacing: 34) {
                 Circle().fill(Color.black).frame(width: 34, height: 34)
                 Circle().fill(Color.black).frame(width: 34, height: 34)
@@ -77,7 +62,7 @@ struct EmulatorPlayView: View {
 
             Button(action: {}) {
                 Text("Browser")
-                    .font(.system(size: 52, weight: .regular, design: .default))
+                    .font(.system(size: 52, weight: .regular))
                     .foregroundStyle(.white)
                     .frame(width: 420, height: 142)
                     .background(Color.black, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -90,7 +75,6 @@ struct EmulatorPlayView: View {
 
 private struct GameViewport: View {
     let game: GameItem
-    let coreLoaded: Bool
 
     var body: some View {
         ZStack {
@@ -98,7 +82,7 @@ private struct GameViewport: View {
 
             VStack(spacing: 12) {
                 Text("GAME")
-                    .font(.system(size: 82, weight: .regular, design: .default))
+                    .font(.system(size: 82, weight: .regular))
                     .foregroundStyle(.white)
 
                 Text(game.name)
@@ -106,7 +90,7 @@ private struct GameViewport: View {
                     .foregroundStyle(.white.opacity(0.72))
                     .lineLimit(1)
 
-                Text(coreLoaded ? "Core loaded" : "Core unavailable")
+                Text(game.system.uppercased())
                     .font(.system(size: 17, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.48))
             }
