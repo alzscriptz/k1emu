@@ -2,7 +2,6 @@ import Foundation
 import Darwin
 
 /// CoreLoader – dlopen ios-arm64 cores and bind libretro entry points.
-/// All @convention(c) types use only C-compatible types (no Swift structs).
 @MainActor
 final class CoreLoader: ObservableObject {
     static let shared = CoreLoader()
@@ -23,7 +22,7 @@ final class CoreLoader: ObservableObject {
     private var sym_reset: UnsafeMutableRawPointer?
 
     private let coreNames: [String: [String]] = [
-        "NDS":     ["libnds", "nds_libretro", "desmume", "melonds"],
+        "NDS":     ["melondsds_libretro", "melondsds", "melonds", "libnds", "nds_libretro", "desmume"],
         "GBA":     ["libgba", "gba_libretro", "mgba", "vba_next"],
         "GB":      ["libgb", "gb_libretro", "sameboy", "gambatte"],
         "GBC":     ["libgb", "gbc_libretro", "sameboy", "gambatte"],
@@ -51,7 +50,10 @@ final class CoreLoader: ObservableObject {
             dirs.append(exe.appendingPathComponent("Frameworks"))
             dirs.append(exe)
         }
-        dirs.append(URL(fileURLWithPath: "/var/mobile/Documents"))
+        // App Documents (user-dropped cores)
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        dirs.append(docs.appendingPathComponent("Cores", isDirectory: true))
+        dirs.append(docs)
         return dirs
     }
 
@@ -96,7 +98,7 @@ final class CoreLoader: ObservableObject {
             if let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
                 for f in files where f.pathExtension == "dylib" {
                     let lower = f.lastPathComponent.lowercased()
-                    if lower.contains(key.lowercased()) || key == "OTHER" {
+                    if lower.contains(key.lowercased()) || lower.contains("melon") || key == "OTHER" {
                         if open(path: f.path, name: displayName(f.lastPathComponent)) {
                             return true
                         }
@@ -105,7 +107,7 @@ final class CoreLoader: ObservableObject {
             }
         }
 
-        lastError = "No dylib for \(system). Drop an ios-arm64 .dylib into Cores/ or Frameworks/"
+        lastError = "No dylib for \(system). Drop an ios-arm64 .dylib into Frameworks/ or Documents/Cores/"
         loadedCoreName = nil
         return false
     }
@@ -146,14 +148,11 @@ final class CoreLoader: ObservableObject {
 
         if sym_api_version != nil && sym_init != nil {
             isLibretro = true
-
             typealias ApiVersionFn = @convention(c) () -> Int32
             let apiFn = unsafeBitCast(sym_api_version!, to: ApiVersionFn.self)
             coreVersion = "libretro API \(apiFn())"
-
             typealias InitFn = @convention(c) () -> Void
-            let initFn = unsafeBitCast(sym_init!, to: InitFn.self)
-            initFn()
+            unsafeBitCast(sym_init!, to: InitFn.self)()
         } else {
             isLibretro = false
             coreVersion = "custom / unknown ABI"
@@ -163,15 +162,12 @@ final class CoreLoader: ObservableObject {
         return true
     }
 
-    /// Load a ROM. Uses a raw byte buffer for retro_game_info (C layout).
     func loadGame(path: String) -> Bool {
         guard isLibretro, let loadSym = sym_load_game else {
             lastError = "Core does not support retro_load_game"
             return false
         }
-
         return path.withCString { cPath in
-            // retro_game_info: path*, data*, size, meta*
             var buf = [UInt8](repeating: 0, count: MemoryLayout<UnsafeRawPointer?>.size * 3 + MemoryLayout<Int>.size)
             withUnsafeBytes(of: Optional(cPath)) { src in
                 for i in 0..<min(src.count, buf.count) { buf[i] = src[i] }
@@ -231,7 +227,6 @@ final class CoreLoader: ObservableObject {
         if let last = s.split(separator: "/").last { s = String(last) }
         s = s.replacingOccurrences(of: ".framework", with: "")
         s = s.replacingOccurrences(of: ".dylib", with: "")
-        if s.lowercased() == "libdns" { s = "libnds" }
         return s
     }
 
