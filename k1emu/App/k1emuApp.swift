@@ -15,6 +15,9 @@ struct k1emuApp: App {
                 .environmentObject(romLibrary)
                 .environmentObject(tweakStore)
                 .preferredColorScheme(settings.colorScheme)
+                .onAppear {
+                    CoreLoader.shared.prepareBundledCores()
+                }
         }
     }
 }

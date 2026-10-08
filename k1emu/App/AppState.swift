@@ -11,7 +11,10 @@ final class AppState: ObservableObject {
     @Published var showGameInfo: GameItem?
     @Published var showTweakPickerFor: GameItem?
     @Published var isTVModeActive: Bool = false
-    @Published var isBrowserMode: Bool = false
+    /// Browser content shown inside the Browser panel (not a full-screen mode)
+    @Published var showBrowserInPanel: Bool = false
+    /// Keyboard shown inside Browser panel (for text entry games)
+    @Published var showKeyboardInPanel: Bool = false
     @Published var isMouseMode: Bool = false
     @Published var showInGameMenu: Bool = false
     @Published var gameplaySpeed: Double = 1.0
@@ -32,7 +35,11 @@ final class AppState: ObservableObject {
         loadedTweakName = nil
         romLoadStatus = ""
         usingBuiltinCore = false
+        showBrowserInPanel = false
+        showKeyboardInPanel = false
         Chip8Core.shared.stop()
+
+        CoreLoader.shared.prepareBundledCores()
 
         let path = game.fileURL.path
         let exists = FileManager.default.fileExists(atPath: path)
@@ -42,12 +49,13 @@ final class AppState: ObservableObject {
         if isChip8 && exists {
             if Chip8Core.shared.loadROM(path: path) {
                 usingBuiltinCore = true
-                coreStatus = "CHIP-8 (built-in)"
-                romLoadStatus = "Emulating — real pixels"
+                coreStatus = "CHIP-8"
+                romLoadStatus = "Running"
                 return
             }
         }
 
+        // NDS and others via dylib
         let ok = CoreLoader.shared.loadCore(for: game.system)
         if ok, let name = CoreLoader.shared.loadedCoreName {
             coreStatus = name
@@ -58,24 +66,11 @@ final class AppState: ObservableObject {
                     romLoadStatus = CoreLoader.shared.lastError ?? "ROM load failed"
                 }
             } else {
-                romLoadStatus = "ROM file missing: \(game.fileName)"
+                romLoadStatus = "ROM missing: \(game.fileName)"
             }
         } else {
-            coreStatus = CoreLoader.shared.lastError ?? "No core"
-            if exists, let data = try? Data(contentsOf: game.fileURL),
-               data.count > 0 && data.count < 3584 {
-                if Chip8Core.shared.loadROM(path: path) {
-                    usingBuiltinCore = true
-                    coreStatus = "CHIP-8 (auto)"
-                    romLoadStatus = "Emulating — real pixels"
-                    return
-                }
-            }
-            if !exists {
-                romLoadStatus = "ROM missing on disk"
-            } else {
-                romLoadStatus = "No core for \(game.system). CHIP-8 works built-in; others need .dylib"
-            }
+            coreStatus = "Load failed"
+            romLoadStatus = CoreLoader.shared.lastError ?? "No core"
         }
     }
 
@@ -85,7 +80,8 @@ final class AppState: ObservableObject {
         isPlaying = false
         currentGame = nil
         isTVModeActive = false
-        isBrowserMode = false
+        showBrowserInPanel = false
+        showKeyboardInPanel = false
         isMouseMode = false
         showInGameMenu = false
         loadedTweakName = nil
@@ -93,5 +89,15 @@ final class AppState: ObservableObject {
         romLoadStatus = ""
         usingBuiltinCore = false
         selectedTab = .emu
+    }
+
+    func toggleBrowserPanel() {
+        showKeyboardInPanel = false
+        showBrowserInPanel.toggle()
+    }
+
+    func toggleKeyboardPanel() {
+        showBrowserInPanel = false
+        showKeyboardInPanel.toggle()
     }
 }

@@ -1,7 +1,8 @@
 import Foundation
 import Darwin
 
-/// CoreLoader – dlopen ios-arm64 cores and bind libretro entry points.
+/// CoreLoader – dlopen ios-arm64 cores. Copies bundle dylibs to Documents/Cores
+/// (LiveContainer / sideload often cannot RTLD_NOW from Frameworks).
 @MainActor
 final class CoreLoader: ObservableObject {
     static let shared = CoreLoader()
@@ -10,9 +11,9 @@ final class CoreLoader: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var isLibretro: Bool = false
     @Published private(set) var coreVersion: String?
+    @Published private(set) var triedPaths: [String] = []
 
     private var handle: UnsafeMutableRawPointer?
-
     private var sym_init: UnsafeMutableRawPointer?
     private var sym_deinit: UnsafeMutableRawPointer?
     private var sym_api_version: UnsafeMutableRawPointer?
@@ -22,46 +23,69 @@ final class CoreLoader: ObservableObject {
     private var sym_reset: UnsafeMutableRawPointer?
 
     private let coreNames: [String: [String]] = [
-        "NDS":     ["melondsds_libretro", "melondsds", "melonds", "libnds", "nds_libretro", "desmume"],
-        "GBA":     ["libgba", "gba_libretro", "mgba", "vba_next"],
-        "GB":      ["libgb", "gb_libretro", "sameboy", "gambatte"],
-        "GBC":     ["libgb", "gbc_libretro", "sameboy", "gambatte"],
-        "NES":     ["libnes", "nes_libretro", "fceumm", "nestopia", "quicknes"],
-        "SNES":    ["libsnes", "snes_libretro", "snes9x", "bsnes"],
-        "N64":     ["libn64", "n64_libretro", "mupen64plus", "parallel_n64"],
-        "PS1":     ["libpsx", "psx_libretro", "pcsx_rearmed", "beetle_psx"],
-        "Genesis": ["libgenesis", "genesis_libretro", "picodrive", "genesis_plus_gx"],
-        "SMS":     ["libsms", "sms_libretro", "picodrive"],
-        "PSP":     ["libpsp", "psp_libretro", "ppsspp"],
-        "DC":      ["libdc", "dc_libretro", "flycast"],
-        "Arcade":  ["libarcade", "fbneo", "mame"],
-        "Other":   ["libcore", "core"]
+        "NDS": ["melondsds_libretro", "melondsds", "melonds", "libnds", "nds_libretro", "desmume"]
     ]
 
-    private var searchDirs: [URL] {
-        var dirs: [URL] = []
-        if let fw = Bundle.main.privateFrameworksURL { dirs.append(fw) }
-        if let res = Bundle.main.resourceURL {
-            dirs.append(res.appendingPathComponent("Frameworks"))
-            dirs.append(res.appendingPathComponent("Cores"))
-            dirs.append(res)
+    private var documentsCores: URL {
+        let u = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Cores", isDirectory: true)
+        try? FileManager.default.createDirectory(at: u, withIntermediateDirectories: true)
+        return u
+    }
+
+    /// Call once at launch: copy any Frameworks/*.dylib into Documents/Cores
+    func prepareBundledCores() {
+        let fm = FileManager.default
+        var sources: [URL] = []
+
+        if let exe = Bundle.main.executableURL?.deletingLastPathComponent() {
+            sources.append(exe.appendingPathComponent("Frameworks"))
+            sources.append(exe)
         }
+        if let res = Bundle.main.resourceURL {
+            sources.append(res.appendingPathComponent("Frameworks"))
+            sources.append(res.appendingPathComponent("Cores"))
+        }
+        if let pf = Bundle.main.privateFrameworksURL {
+            sources.append(pf)
+        }
+
+        for dir in sources {
+            guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
+            for f in files where f.pathExtension == "dylib" {
+                let dest = documentsCores.appendingPathComponent(f.lastPathComponent)
+                if fm.fileExists(atPath: dest.path) {
+                    // refresh if bundle is newer / different size
+                    let srcSize = (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    let dstSize = (try? dest.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    if srcSize == dstSize { continue }
+                    try? fm.removeItem(at: dest)
+                }
+                try? fm.copyItem(at: f, to: dest)
+            }
+        }
+    }
+
+    private var searchDirs: [URL] {
+        var dirs: [URL] = [documentsCores]
         if let exe = Bundle.main.executableURL?.deletingLastPathComponent() {
             dirs.append(exe.appendingPathComponent("Frameworks"))
             dirs.append(exe)
         }
-        // App Documents (user-dropped cores)
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        dirs.append(docs.appendingPathComponent("Cores", isDirectory: true))
-        dirs.append(docs)
+        if let res = Bundle.main.resourceURL {
+            dirs.append(res.appendingPathComponent("Frameworks"))
+            dirs.append(res.appendingPathComponent("Cores"))
+        }
+        if let pf = Bundle.main.privateFrameworksURL { dirs.append(pf) }
         return dirs
     }
 
     func listAvailableCores() -> [String] {
+        prepareBundledCores()
         var names: [String] = []
         for dir in searchDirs {
             guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
-            for f in files where f.pathExtension == "dylib" || f.pathExtension == "framework" {
+            for f in files where f.pathExtension == "dylib" {
                 names.append(f.lastPathComponent)
             }
         }
@@ -74,67 +98,72 @@ final class CoreLoader: ObservableObject {
         lastError = nil
         isLibretro = false
         coreVersion = nil
+        triedPaths = []
+
+        prepareBundledCores()
 
         let key = system.uppercased()
         var candidates = coreNames[key] ?? []
-        candidates.append(contentsOf: coreNames["Other"] ?? [])
-        candidates.insert("lib\(key.lowercased())", at: 0)
+        // Always try melon names for NDS
+        if key == "NDS" {
+            candidates = ["melondsds_libretro", "libnds", "melonds", "melondsds", "nds_libretro"]
+        }
+
+        var lastDlError = ""
 
         for dir in searchDirs {
             for base in candidates {
-                let urls = [
-                    dir.appendingPathComponent("\(base).dylib"),
-                    dir.appendingPathComponent(base),
-                    dir.appendingPathComponent("\(base).framework/\(base)")
-                ]
-                for url in urls {
-                    if FileManager.default.fileExists(atPath: url.path) {
-                        if open(path: url.path, name: displayName(url.lastPathComponent)) {
-                            return true
-                        }
+                let url = dir.appendingPathComponent("\(base).dylib")
+                triedPaths.append(url.path)
+                if FileManager.default.fileExists(atPath: url.path) {
+                    if open(path: url.path, name: base) {
+                        return true
                     }
+                    lastDlError = lastError ?? ""
                 }
             }
+            // any melon* / *nds* dylib in folder
             if let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
                 for f in files where f.pathExtension == "dylib" {
                     let lower = f.lastPathComponent.lowercased()
-                    if lower.contains(key.lowercased()) || lower.contains("melon") || key == "OTHER" {
+                    if key == "NDS" && (lower.contains("melon") || lower.contains("nds") || lower.contains("desmume")) {
+                        triedPaths.append(f.path)
                         if open(path: f.path, name: displayName(f.lastPathComponent)) {
                             return true
                         }
+                        lastDlError = lastError ?? ""
                     }
                 }
             }
         }
 
-        lastError = "No dylib for \(system). Drop an ios-arm64 .dylib into Frameworks/ or Documents/Cores/"
+        let found = triedPaths.filter { FileManager.default.fileExists(atPath: $0) }
+        if found.isEmpty {
+            lastError = "No NDS dylib found. Expected melondsds_libretro.dylib in Frameworks or Documents/Cores"
+        } else {
+            lastError = "dlopen failed: \(lastDlError). Tried: \(found.map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))"
+        }
         loadedCoreName = nil
         return false
     }
 
-    @discardableResult
-    func loadCore(named fileName: String) -> Bool {
-        unload()
-        lastError = nil
-        for dir in searchDirs {
-            let url = dir.appendingPathComponent(fileName)
-            if FileManager.default.fileExists(atPath: url.path) {
-                return open(path: url.path, name: displayName(fileName))
-            }
-        }
-        lastError = "\(fileName) not found"
-        return false
-    }
-
     private func open(path: String, name: String) -> Bool {
-        guard let h = dlopen(path, RTLD_NOW) else {
-            if let err = dlerror() {
-                lastError = String(cString: err)
-            } else {
-                lastError = "dlopen failed for \(name)"
+        // Clear previous error
+        _ = dlerror()
+
+        // Prefer LAZY first (missing optional deps), then NOW
+        var h = dlopen(path, RTLD_LAZY | RTLD_LOCAL)
+        if h == nil {
+            let err1 = dlerror().map { String(cString: $0) } ?? "nil"
+            _ = dlerror()
+            h = dlopen(path, RTLD_NOW | RTLD_LOCAL)
+            if h == nil {
+                let err2 = dlerror().map { String(cString: $0) } ?? "nil"
+                lastError = "\(err2) [also LAZY: \(err1)]"
+                return false
             }
-            return false
         }
+
         handle = h
         loadedCoreName = name
 
@@ -155,7 +184,7 @@ final class CoreLoader: ObservableObject {
             unsafeBitCast(sym_init!, to: InitFn.self)()
         } else {
             isLibretro = false
-            coreVersion = "custom / unknown ABI"
+            coreVersion = "loaded (no retro_* symbols)"
         }
 
         lastError = nil
@@ -164,19 +193,23 @@ final class CoreLoader: ObservableObject {
 
     func loadGame(path: String) -> Bool {
         guard isLibretro, let loadSym = sym_load_game else {
-            lastError = "Core does not support retro_load_game"
+            lastError = "Core missing retro_load_game"
             return false
         }
+        // Proper retro_game_info: { path*, data*, size, meta* }
         return path.withCString { cPath in
-            var buf = [UInt8](repeating: 0, count: MemoryLayout<UnsafeRawPointer?>.size * 3 + MemoryLayout<Int>.size)
-            withUnsafeBytes(of: Optional(cPath)) { src in
-                for i in 0..<min(src.count, buf.count) { buf[i] = src[i] }
+            struct RetroGameInfo {
+                var path: UnsafePointer<CChar>?
+                var data: UnsafeRawPointer?
+                var size: Int
+                var meta: UnsafePointer<CChar>?
             }
-            typealias LoadGameFn = @convention(c) (UnsafeRawPointer?) -> Bool
+            var info = RetroGameInfo(path: cPath, data: nil, size: 0, meta: nil)
+            typealias LoadGameFn = @convention(c) (UnsafePointer<RetroGameInfo>?) -> Bool
             let loadFn = unsafeBitCast(loadSym, to: LoadGameFn.self)
-            return buf.withUnsafeBytes { raw in
-                loadFn(raw.baseAddress)
-            }
+            let ok = withUnsafePointer(to: &info) { loadFn($0) }
+            if !ok { lastError = "retro_load_game returned false" }
+            return ok
         }
     }
 
@@ -206,31 +239,19 @@ final class CoreLoader: ObservableObject {
                 unsafeBitCast(deinitSym, to: DeinitFn.self)()
             }
         }
-        if let h = handle {
-            dlclose(h)
-            handle = nil
-        }
+        if let h = handle { dlclose(h); handle = nil }
         loadedCoreName = nil
         isLibretro = false
         coreVersion = nil
-        sym_init = nil
-        sym_deinit = nil
-        sym_api_version = nil
-        sym_load_game = nil
-        sym_unload_game = nil
-        sym_run = nil
-        sym_reset = nil
+        sym_init = nil; sym_deinit = nil; sym_api_version = nil
+        sym_load_game = nil; sym_unload_game = nil; sym_run = nil; sym_reset = nil
     }
 
     private func displayName(_ raw: String) -> String {
         var s = raw
         if let last = s.split(separator: "/").last { s = String(last) }
-        s = s.replacingOccurrences(of: ".framework", with: "")
-        s = s.replacingOccurrences(of: ".dylib", with: "")
-        return s
+        return s.replacingOccurrences(of: ".dylib", with: "")
     }
 
-    deinit {
-        if let h = handle { dlclose(h) }
-    }
+    deinit { if let h = handle { dlclose(h) } }
 }
