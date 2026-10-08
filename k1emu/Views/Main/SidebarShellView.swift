@@ -11,7 +11,6 @@ struct SidebarShellView: View {
             AnimatedBackground().ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // MAIN CONTENT
                 Group {
                     switch appState.selectedTab {
                     case .emu:
@@ -24,7 +23,6 @@ struct SidebarShellView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // HORIZONTAL liquid-glass bar
                 horizontalBar
             }
         }
@@ -84,22 +82,5 @@ struct SidebarShellView: View {
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// Soft animated background under glass chrome
-struct AnimatedBackground: View {
-    @EnvironmentObject var settings: SettingsStore
-
-    var body: some View {
-        LinearGradient(
-            colors: [
-                settings.backgroundColor,
-                settings.backgroundColor.opacity(0.85),
-                settings.accentColor.opacity(0.12)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
     }
 }
