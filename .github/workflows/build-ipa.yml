@@ -14,13 +14,11 @@ jobs:
     timeout-minutes: 45
 
     steps:
-<｜tool_call_begin｜>
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Select Xcode
         run: |
-          # Prefer newest available
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer || true
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-path
