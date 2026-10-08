@@ -2,13 +2,13 @@ import SwiftUI
 import UIKit
 
 /// Horizontal liquid-glass controller layout.
-/// Landscape-friendly: left stick+D-pad | GAME + dots | face+right stick.
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
 
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var settings: SettingsStore
+    @ObservedObject private var chip8 = Chip8Core.shared
 
     @State private var leftStick: CGSize = .zero
     @State private var rightStick: CGSize = .zero
@@ -22,7 +22,6 @@ struct ControllerView: View {
 
     var body: some View {
         ZStack {
-            // Soft gradient base under glass
             LinearGradient(
                 colors: [
                     Color(red: 0.92, green: 0.94, blue: 0.98),
@@ -82,11 +81,8 @@ struct ControllerView: View {
         .animation(.spring(response: 0.28, dampingFraction: 0.8), value: appState.isMouseMode)
     }
 
-    // MARK: - Horizontal liquid-glass layout
-
     private var horizontalGlassLayout: some View {
         VStack(spacing: 10) {
-            // Top chrome
             HStack {
                 glassIconButton("line.3.horizontal") {
                     haptic(.light)
@@ -112,7 +108,6 @@ struct ControllerView: View {
             .padding(.horizontal, 14)
             .padding(.top, 6)
 
-            // Shoulders row
             HStack {
                 HStack(spacing: 8) {
                     ShoulderPill(label: "LT", color: shoulderColor, isTrigger: true) { haptic(.soft) }
@@ -126,50 +121,40 @@ struct ControllerView: View {
             }
             .padding(.horizontal, 20)
 
-            // MAIN HORIZONTAL STRIP
             HStack(alignment: .center, spacing: 10) {
-                // LEFT glass panel: stick + D-pad
                 VStack(spacing: 14) {
                     PhotoStick(offset: $leftStick)
                         .frame(width: 78, height: 78)
                     PhotoDPad()
                         .frame(width: 80, height: 80)
-                        .onTapGesture { haptic(.light) }
+                        .onTapGesture {
+                            haptic(.light)
+                            chip8.setKey(4, pressed: true)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                chip8.setKey(4, pressed: false)
+                            }
+                        }
                 }
                 .padding(14)
                 .background(glassCard)
 
-                // CENTER: GAME + horizontal dots + Browser
                 VStack(spacing: 10) {
                     gameScreen
                         .frame(maxWidth: .infinity)
-                        .frame(height: 120)
+                        .frame(height: 130)
 
-                    // Dots in a horizontal glass pill
                     HStack(spacing: 20) {
-                        DotButton(
-                            systemImage: "rectangle.on.rectangle",
-                            isActive: appState.isMouseMode,
-                            activeColor: .blue
-                        ) {
+                        DotButton(systemImage: "rectangle.on.rectangle", isActive: appState.isMouseMode, activeColor: .blue) {
                             haptic(.medium)
                             withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
                                 appState.isMouseMode.toggle()
                             }
                         }
-                        DotButton(
-                            systemImage: "globe",
-                            isActive: appState.isBrowserMode,
-                            activeColor: .cyan
-                        ) {
+                        DotButton(systemImage: "globe", isActive: appState.isBrowserMode, activeColor: .cyan) {
                             haptic(.medium)
                             appState.isBrowserMode = true
                         }
-                        DotButton(
-                            systemImage: "gearshape.fill",
-                            isActive: showControllerSettings,
-                            activeColor: .purple
-                        ) {
+                        DotButton(systemImage: "gearshape.fill", isActive: showControllerSettings, activeColor: .purple) {
                             haptic(.medium)
                             showControllerSettings = true
                         }
@@ -196,11 +181,20 @@ struct ControllerView: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                // RIGHT glass panel: face buttons + stick
                 VStack(spacing: 14) {
                     PhotoFaceButtons(
                         y: yColor, x: xColor, b: bColor, a: aColor,
-                        onPress: { haptic(.medium) }
+                        onPress: { key in
+                            haptic(.medium)
+                            // Map A/B/X/Y → CHIP-8 keys 0x5 / 0x6 / 0x4 / 0x1
+                            let map: [String: Int] = ["A": 5, "B": 6, "X": 4, "Y": 1]
+                            if let k = map[key] {
+                                chip8.setKey(k, pressed: true)
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                                    chip8.setKey(k, pressed: false)
+                                }
+                            }
+                        }
                     )
                     .frame(width: 92, height: 92)
 
@@ -214,9 +208,9 @@ struct ControllerView: View {
 
             Spacer(minLength: 4)
 
-            // Status strip
             HStack(spacing: 8) {
-                statusChip(appState.coreStatus, color: CoreLoader.shared.loadedCoreName != nil ? .green : .orange)
+                let ok = appState.usingBuiltinCore || CoreLoader.shared.loadedCoreName != nil
+                statusChip(appState.coreStatus, color: ok ? .green : .orange)
                 if !appState.romLoadStatus.isEmpty {
                     statusChip(appState.romLoadStatus, color: .cyan)
                 }
@@ -271,7 +265,11 @@ struct ControllerView: View {
                         .stroke(Color.white.opacity(0.1), lineWidth: 1)
                 )
 
-            if showGamePanel {
+            if appState.usingBuiltinCore && chip8.isRunning {
+                // REAL emulated pixels
+                EmulatorScreenView()
+                    .padding(4)
+            } else if showGamePanel {
                 VStack(spacing: 5) {
                     Text("GAME")
                         .font(.system(size: 26, weight: .bold, design: .rounded))
@@ -284,19 +282,17 @@ struct ControllerView: View {
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(Color.green.opacity(0.9))
                     } else {
-                        Text("No core — add .dylib to Cores/")
-                            .font(.system(size: 10))
+                        Text("CHIP-8 built-in · other systems need .dylib")
+                            .font(.system(size: 9))
                             .foregroundStyle(Color.orange.opacity(0.9))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 8)
                     }
                 }
             } else {
                 VStack(spacing: 4) {
-                    Text("TV MODE")
-                        .font(.headline.bold())
-                        .foregroundStyle(.white)
-                    Text("Game on external display")
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.5))
+                    Text("TV MODE").font(.headline.bold()).foregroundStyle(.white)
+                    Text("Game on external display").font(.caption2).foregroundStyle(.white.opacity(0.5))
                 }
             }
         }
@@ -347,11 +343,9 @@ struct DotButton: View {
 struct ControllerSettingsModal: View {
     @Binding var isPresented: Bool
     var onQuit: () -> Void
-
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var settings: SettingsStore
     @EnvironmentObject var tweakStore: TweakStore
-
     @State private var section: SettingsSection = .tweaks
 
     enum SettingsSection: String, CaseIterable {
@@ -362,120 +356,58 @@ struct ControllerSettingsModal: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.5).ignoresSafeArea()
-                .onTapGesture { isPresented = false }
-
+            Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { isPresented = false }
             VStack(spacing: 0) {
                 HStack {
                     Text("Settings").font(.title3.bold())
                     Spacer()
                     Button { isPresented = false } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.title2).foregroundStyle(.secondary)
+                        Image(systemName: "xmark.circle.fill").font(.title2).foregroundStyle(.secondary)
                     }
-                }
-                .padding()
-
+                }.padding()
                 Picker("", selection: $section) {
                     ForEach(SettingsSection.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-
+                }.pickerStyle(.segmented).padding(.horizontal)
                 Divider().padding(.vertical, 10)
-
                 Group {
                     switch section {
-                    case .tweaks: tweaksContent
-                    case .keybinds: keybindsContent
-                    case .leave: leaveContent
+                    case .tweaks:
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 14) {
+                                LabeledContent("Show FPS") { Toggle("", isOn: $settings.showFPS).labelsHidden() }
+                                LabeledContent("Liquid Glass") { Toggle("", isOn: $settings.useLiquidGlass).labelsHidden() }
+                            }.padding()
+                        }
+                    case .keybinds:
+                        List {
+                            LabeledContent("A/B/X/Y", value: "CHIP-8 keys")
+                            LabeledContent("D-Pad", value: "Key 4")
+                        }.listStyle(.plain).scrollContentBackground(.hidden)
+                    case .leave:
+                        VStack(spacing: 16) {
+                            Button(role: .destructive) { onQuit() } label: {
+                                Label("Quit Game", systemImage: "xmark.circle")
+                                    .frame(maxWidth: .infinity).padding()
+                                    .background(Color.red.opacity(0.85), in: RoundedRectangle(cornerRadius: 14))
+                                    .foregroundStyle(.white)
+                            }
+                            Spacer()
+                        }.padding()
                     }
-                }
-                .frame(maxHeight: 300)
+                }.frame(maxHeight: 280)
             }
             .background(
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .fill(.ultraThinMaterial)
                     .overlay(
                         RoundedRectangle(cornerRadius: 26, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [.white.opacity(0.4), .white.opacity(0.08)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1.2
-                            )
+                            .stroke(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2)
                     )
                     .shadow(color: .black.opacity(0.25), radius: 24, y: 10)
             )
             .padding(28)
             .frame(maxWidth: 400)
         }
-    }
-
-    private var tweaksContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                LabeledContent("Show FPS") {
-                    Toggle("", isOn: $settings.showFPS).labelsHidden()
-                }
-                LabeledContent("Liquid Glass") {
-                    Toggle("", isOn: $settings.useLiquidGlass).labelsHidden()
-                }
-                Text("Tweaks").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-                Button("None") { appState.loadedTweakName = nil }.buttonStyle(.bordered)
-                ForEach(tweakStore.tweaks) { t in
-                    Button {
-                        appState.loadedTweakName = t.name
-                    } label: {
-                        HStack {
-                            Text(t.name)
-                            Spacer()
-                            if appState.loadedTweakName == t.name {
-                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                            }
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-            .padding()
-        }
-    }
-
-    private var keybindsContent: some View {
-        List {
-            LabeledContent("D-Pad", value: "Touch")
-            LabeledContent("Face buttons", value: "A B X Y")
-            LabeledContent("Shoulders", value: "L R LT RT")
-            LabeledContent("Sticks", value: "Analog")
-            LabeledContent("Cursor", value: "Left stick + A")
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-    }
-
-    private var leaveContent: some View {
-        VStack(spacing: 16) {
-            Button {
-                isPresented = false
-                appState.isTVModeActive = false
-            } label: {
-                Label("Disconnect TV", systemImage: "tv.slash")
-                    .frame(maxWidth: .infinity).padding()
-                    .background(Color.orange.opacity(0.75), in: RoundedRectangle(cornerRadius: 14))
-                    .foregroundStyle(.white)
-            }
-            Button(role: .destructive) { onQuit() } label: {
-                Label("Quit Game", systemImage: "xmark.circle")
-                    .frame(maxWidth: .infinity).padding()
-                    .background(Color.red.opacity(0.85), in: RoundedRectangle(cornerRadius: 14))
-                    .foregroundStyle(.white)
-            }
-            Spacer()
-        }
-        .padding()
     }
 }
 
@@ -484,18 +416,15 @@ struct ShoulderPill: View {
     let color: Color
     let isTrigger: Bool
     var onPress: (() -> Void)? = nil
-
     var body: some View {
         Text(label)
             .font(.system(size: 11, weight: .bold, design: .rounded))
             .foregroundStyle(Color(white: 0.3))
             .frame(width: isTrigger ? 50 : 54, height: isTrigger ? 22 : 26)
-            .background(
-                Group {
-                    if isTrigger { Capsule().fill(color) }
-                    else { RoundedRectangle(cornerRadius: 6, style: .continuous).fill(color) }
-                }
-            )
+            .background(Group {
+                if isTrigger { Capsule().fill(color) }
+                else { RoundedRectangle(cornerRadius: 6, style: .continuous).fill(color) }
+            })
             .contentShape(Rectangle())
             .onTapGesture { onPress?() }
     }
@@ -504,10 +433,8 @@ struct ShoulderPill: View {
 struct PhotoDPad: View {
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.black).frame(width: 26, height: 78)
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.black).frame(width: 78, height: 26)
+            RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.black).frame(width: 26, height: 78)
+            RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color.black).frame(width: 78, height: 26)
             Circle().fill(Color.black).frame(width: 20, height: 20)
         }
     }
@@ -518,7 +445,7 @@ struct PhotoFaceButtons: View {
     let x: Color
     let b: Color
     let a: Color
-    var onPress: (() -> Void)? = nil
+    var onPress: ((String) -> Void)? = nil
 
     var body: some View {
         ZStack {
@@ -537,36 +464,27 @@ struct PhotoFaceButtons: View {
             .background(Circle().fill(color))
             .shadow(color: color.opacity(0.4), radius: 3, y: 1)
             .contentShape(Circle())
-            .onTapGesture { onPress?() }
+            .onTapGesture { onPress?(label) }
     }
 }
 
 struct PhotoStick: View {
     @Binding var offset: CGSize
     private let maxTravel: CGFloat = 20
-
     var body: some View {
         ZStack {
-            Circle()
-                .stroke(Color(white: 0.72), lineWidth: 7)
-                .background(Circle().fill(Color(white: 0.9)))
-            Circle()
-                .fill(Color.black)
-                .frame(width: 48, height: 48)
-                .offset(offset)
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            let x = max(-maxTravel, min(maxTravel, value.translation.width))
-                            let y = max(-maxTravel, min(maxTravel, value.translation.height))
-                            offset = CGSize(width: x, height: y)
-                        }
-                        .onEnded { _ in
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) {
-                                offset = .zero
-                            }
-                        }
-                )
+            Circle().stroke(Color(white: 0.72), lineWidth: 7).background(Circle().fill(Color(white: 0.9)))
+            Circle().fill(Color.black).frame(width: 48, height: 48).offset(offset)
+                .gesture(DragGesture()
+                    .onChanged { v in
+                        offset = CGSize(
+                            width: max(-maxTravel, min(maxTravel, v.translation.width)),
+                            height: max(-maxTravel, min(maxTravel, v.translation.height))
+                        )
+                    }
+                    .onEnded { _ in
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { offset = .zero }
+                    })
         }
     }
 }
