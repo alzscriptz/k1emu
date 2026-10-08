@@ -1,10 +1,8 @@
 import Foundation
 import Darwin
 
-// MARK: - CoreLoader (libretro-ready)
-// Uses raw C function pointers so we stay ABI-compatible without
-// putting non-ObjC-representable Swift structs into @convention(c).
-
+/// CoreLoader – dlopen ios-arm64 cores and bind libretro entry points.
+/// All @convention(c) types use only C-compatible types (no Swift structs).
 @MainActor
 final class CoreLoader: ObservableObject {
     static let shared = CoreLoader()
@@ -16,11 +14,9 @@ final class CoreLoader: ObservableObject {
 
     private var handle: UnsafeMutableRawPointer?
 
-    // Raw C symbols (looked up via dlsym)
     private var sym_init: UnsafeMutableRawPointer?
     private var sym_deinit: UnsafeMutableRawPointer?
     private var sym_api_version: UnsafeMutableRawPointer?
-    private var sym_get_system_info: UnsafeMutableRawPointer?
     private var sym_load_game: UnsafeMutableRawPointer?
     private var sym_unload_game: UnsafeMutableRawPointer?
     private var sym_run: UnsafeMutableRawPointer?
@@ -128,8 +124,6 @@ final class CoreLoader: ObservableObject {
         return false
     }
 
-    // MARK: - Open + bind symbols
-
     private func open(path: String, name: String) -> Bool {
         guard let h = dlopen(path, RTLD_NOW) else {
             if let err = dlerror() {
@@ -142,49 +136,24 @@ final class CoreLoader: ObservableObject {
         handle = h
         loadedCoreName = name
 
-        // Look up standard libretro entry points as raw pointers
-        sym_api_version     = dlsym(h, "retro_api_version")
-        sym_init            = dlsym(h, "retro_init")
-        sym_deinit          = dlsym(h, "retro_deinit")
-        sym_get_system_info = dlsym(h, "retro_get_system_info")
-        sym_load_game       = dlsym(h, "retro_load_game")
-        sym_unload_game     = dlsym(h, "retro_unload_game")
-        sym_run             = dlsym(h, "retro_run")
-        sym_reset           = dlsym(h, "retro_reset")
+        sym_api_version = dlsym(h, "retro_api_version")
+        sym_init        = dlsym(h, "retro_init")
+        sym_deinit      = dlsym(h, "retro_deinit")
+        sym_load_game   = dlsym(h, "retro_load_game")
+        sym_unload_game = dlsym(h, "retro_unload_game")
+        sym_run         = dlsym(h, "retro_run")
+        sym_reset       = dlsym(h, "retro_reset")
 
         if sym_api_version != nil && sym_init != nil {
             isLibretro = true
 
-            // Call retro_api_version() -> Int32
             typealias ApiVersionFn = @convention(c) () -> Int32
-            let apiFn = unsafeBitCast(sym_api_version, to: ApiVersionFn.self)
-            let ver = apiFn()
-            coreVersion = "libretro API \(ver)"
+            let apiFn = unsafeBitCast(sym_api_version!, to: ApiVersionFn.self)
+            coreVersion = "libretro API \(apiFn())"
 
-            // Call retro_init()
             typealias InitFn = @convention(c) () -> Void
-            let initFn = unsafeBitCast(sym_init, to: InitFn.self)
+            let initFn = unsafeBitCast(sym_init!, to: InitFn.self)
             initFn()
-
-            // Best-effort: try to read library name via retro_get_system_info
-            // (layout is stable enough for name/version strings)
-            if let infoSym = sym_get_system_info {
-                // We only need the first two char* fields
-                struct MinimalInfo {
-                    var library_name: UnsafePointer<CChar>?
-                    var library_version: UnsafePointer<CChar>?
-                }
-                typealias GetInfoFn = @convention(c) (UnsafeMutablePointer<MinimalInfo>?) -> Void
-                let getInfo = unsafeBitCast(infoSym, to: GetInfoFn.self)
-                var info = MinimalInfo(library_name: nil, library_version: nil)
-                getInfo(&info)
-                if let lib = info.library_name {
-                    loadedCoreName = String(cString: lib)
-                }
-                if let verStr = info.library_version {
-                    coreVersion = String(cString: verStr)
-                }
-            }
         } else {
             isLibretro = false
             coreVersion = "custom / unknown ABI"
@@ -194,47 +163,43 @@ final class CoreLoader: ObservableObject {
         return true
     }
 
-    // MARK: - Public core control
-
+    /// Load a ROM. Uses a raw byte buffer for retro_game_info (C layout).
     func loadGame(path: String) -> Bool {
         guard isLibretro, let loadSym = sym_load_game else {
             lastError = "Core does not support retro_load_game"
             return false
         }
-        // Minimal retro_game_info: path, data, size, meta
-        struct GameInfo {
-            var path: UnsafePointer<CChar>?
-            var data: UnsafeRawPointer?
-            var size: Int
-            var meta: UnsafePointer<CChar>?
-        }
-        typealias LoadGameFn = @convention(c) (UnsafePointer<GameInfo>?) -> Bool
-        let loadFn = unsafeBitCast(loadSym, to: LoadGameFn.self)
+
         return path.withCString { cPath in
-            var info = GameInfo(path: cPath, data: nil, size: 0, meta: nil)
-            return loadFn(&info)
+            // retro_game_info: path*, data*, size, meta*
+            var buf = [UInt8](repeating: 0, count: MemoryLayout<UnsafeRawPointer?>.size * 3 + MemoryLayout<Int>.size)
+            withUnsafeBytes(of: Optional(cPath)) { src in
+                for i in 0..<min(src.count, buf.count) { buf[i] = src[i] }
+            }
+            typealias LoadGameFn = @convention(c) (UnsafeRawPointer?) -> Bool
+            let loadFn = unsafeBitCast(loadSym, to: LoadGameFn.self)
+            return buf.withUnsafeBytes { raw in
+                loadFn(raw.baseAddress)
+            }
         }
     }
 
     func runFrame() {
         guard let runSym = sym_run else { return }
         typealias RunFn = @convention(c) () -> Void
-        let runFn = unsafeBitCast(runSym, to: RunFn.self)
-        runFn()
+        unsafeBitCast(runSym, to: RunFn.self)()
     }
 
     func reset() {
         guard let resetSym = sym_reset else { return }
         typealias ResetFn = @convention(c) () -> Void
-        let resetFn = unsafeBitCast(resetSym, to: ResetFn.self)
-        resetFn()
+        unsafeBitCast(resetSym, to: ResetFn.self)()
     }
 
     func unloadGame() {
         guard let unloadSym = sym_unload_game else { return }
         typealias UnloadFn = @convention(c) () -> Void
-        let unloadFn = unsafeBitCast(unloadSym, to: UnloadFn.self)
-        unloadFn()
+        unsafeBitCast(unloadSym, to: UnloadFn.self)()
     }
 
     func unload() {
@@ -242,8 +207,7 @@ final class CoreLoader: ObservableObject {
             unloadGame()
             if let deinitSym = sym_deinit {
                 typealias DeinitFn = @convention(c) () -> Void
-                let deinitFn = unsafeBitCast(deinitSym, to: DeinitFn.self)
-                deinitFn()
+                unsafeBitCast(deinitSym, to: DeinitFn.self)()
             }
         }
         if let h = handle {
@@ -256,7 +220,6 @@ final class CoreLoader: ObservableObject {
         sym_init = nil
         sym_deinit = nil
         sym_api_version = nil
-        sym_get_system_info = nil
         sym_load_game = nil
         sym_unload_game = nil
         sym_run = nil
