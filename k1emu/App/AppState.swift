@@ -17,6 +17,7 @@ final class AppState: ObservableObject {
     @Published var gameplaySpeed: Double = 1.0
     @Published var loadedTweakName: String? = nil
     @Published var coreStatus: String = "No core"
+    @Published var romLoadStatus: String = ""
 
     enum Tab: String, CaseIterable {
         case emu = "Emu"
@@ -28,11 +29,25 @@ final class AppState: ObservableObject {
         currentGame = game
         isPlaying = true
         loadedTweakName = nil
+        romLoadStatus = ""
+
         let ok = CoreLoader.shared.loadCore(for: game.system)
         if ok, let name = CoreLoader.shared.loadedCoreName {
             coreStatus = name
+            // Try to load the ROM file into the core
+            if let path = game.fileURL?.path,
+               FileManager.default.fileExists(atPath: path) {
+                if CoreLoader.shared.loadGame(path: path) {
+                    romLoadStatus = "ROM loaded"
+                } else {
+                    romLoadStatus = CoreLoader.shared.lastError ?? "ROM load failed (core may need BIOS / different format)"
+                }
+            } else {
+                romLoadStatus = "ROM file missing on disk"
+            }
         } else {
             coreStatus = CoreLoader.shared.lastError ?? "No core"
+            romLoadStatus = "Drop an ios-arm64 core dylib into Cores/ to run this system"
         }
     }
 
@@ -46,6 +61,7 @@ final class AppState: ObservableObject {
         showInGameMenu = false
         loadedTweakName = nil
         coreStatus = "No core"
+        romLoadStatus = ""
         selectedTab = .emu
     }
 }

@@ -14,7 +14,6 @@ struct EmuLibraryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // TOP BAR — matches sketch: ? | logo title | + 
             HStack(spacing: 12) {
                 Button { onToggleSidebar?() } label: {
                     Image(systemName: "line.3.horizontal")
@@ -55,27 +54,24 @@ struct EmuLibraryView: View {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 16) {
                         ForEach(romLibrary.games) { game in
-                            GameCard(game: game)
-                                .contextMenu {
-                                    Button { appState.showGameInfo = game } label: {
-                                        Label("Info", systemImage: "info.circle")
-                                    }
-                                    Button { appState.showTweakPickerFor = game } label: {
-                                        Label("Tweaks", systemImage: "slider.horizontal.3")
-                                    }
-                                    Button {} label: {
-                                        Label("Multitask", systemImage: "rectangle.on.rectangle")
-                                    }
-                                    Divider()
-                                    Button(role: .destructive) {
-                                        withAnimation { romLibrary.delete(game) }
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
+                            GameCard(game: game) {
+                                romLibrary.markPlayed(game)
+                                appState.startGame(game)
+                            }
+                            .contextMenu {
+                                Button { appState.showGameInfo = game } label: {
+                                    Label("Info", systemImage: "info.circle")
                                 }
-                                .onTapGesture {
-                                    appState.startGame(game)
+                                Button { appState.showTweakPickerFor = game } label: {
+                                    Label("Tweaks", systemImage: "slider.horizontal.3")
                                 }
+                                Divider()
+                                Button(role: .destructive) {
+                                    withAnimation { romLibrary.delete(game) }
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -90,7 +86,7 @@ struct EmuLibraryView: View {
             K1Logo(size: 80)
             Text("No games yet")
                 .font(.title2.bold())
-            Text("Tap + to add a ROM (.nds, .gba, .n64, .nes…)\nNothing shows until you add something.")
+            Text("Tap + to add a ROM\nSupports .zip, .nds, .gba, .nes, .sfc, .n64, .iso…")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -111,6 +107,7 @@ struct EmuLibraryView: View {
 
 struct GameCard: View {
     let game: GameItem
+    var onRun: () -> Void
     @EnvironmentObject var settings: SettingsStore
 
     var body: some View {
@@ -132,8 +129,16 @@ struct GameCard: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(LinearGradient(colors: [.white.opacity(0.25), .clear], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [.white.opacity(0.25), .clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
                     )
+                    .liquidGlass(enabled: settings.useLiquidGlass)
 
                 Text(game.displaySystem)
                     .font(.caption2.bold())
@@ -143,20 +148,25 @@ struct GameCard: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(8)
             }
+            .contentShape(Rectangle())
+            .onTapGesture { onRun() }
 
             Text(game.name)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
 
-            // RUN button — matches sketch
-            HStack {
-                Image(systemName: "play.fill").font(.caption2)
-                Text("Run").font(.caption2.weight(.bold))
+            // Real Run button
+            Button(action: onRun) {
+                HStack(spacing: 4) {
+                    Image(systemName: "play.fill").font(.caption2)
+                    Text("Run").font(.caption2.weight(.bold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(settings.accentColor))
             }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Capsule().fill(settings.accentColor))
+            .buttonStyle(.plain)
         }
     }
 
