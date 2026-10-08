@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Horizontal liquid-glass controller layout.
+/// Horizontal liquid-glass controller. Browser mode keeps a bottom dock.
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -32,10 +32,18 @@ struct ControllerView: View {
             )
             .ignoresSafeArea()
 
-            if appState.isBrowserMode {
-                BrowserModeView()
-            } else {
-                horizontalGlassLayout
+            VStack(spacing: 0) {
+                // Main area: browser OR controller
+                if appState.isBrowserMode {
+                    BrowserModeView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    horizontalGlassLayout
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+
+                // ALWAYS show Browser dock at the bottom
+                browserDock
             }
 
             VStack {
@@ -47,8 +55,9 @@ struct ControllerView: View {
                 }
                 Spacer()
             }
+            .allowsHitTesting(false)
 
-            if appState.isMouseMode {
+            if appState.isMouseMode && !appState.isBrowserMode {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .stroke(
                         LinearGradient(
@@ -78,7 +87,56 @@ struct ControllerView: View {
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .animation(.spring(response: 0.32, dampingFraction: 0.82), value: showControllerSettings)
-        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: appState.isMouseMode)
+        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: appState.isBrowserMode)
+    }
+
+    /// Persistent bottom Browser bar — always visible
+    private var browserDock: some View {
+        HStack(spacing: 12) {
+            Button {
+                haptic(.medium)
+                withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                    appState.isBrowserMode.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: appState.isBrowserMode ? "gamecontroller.fill" : "globe")
+                    Text(appState.isBrowserMode ? "Controller" : "Browser")
+                        .font(.system(size: 15, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.black.opacity(0.9))
+                )
+            }
+            .buttonStyle(PressDepthButtonStyle())
+
+            if appState.isBrowserMode {
+                Button {
+                    haptic(.light)
+                    appState.isBrowserMode = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Circle().fill(Color.red.opacity(0.85)))
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .overlay(alignment: .top) {
+                    Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+                }
+                .ignoresSafeArea(edges: .bottom)
+        )
     }
 
     private var horizontalGlassLayout: some View {
@@ -123,8 +181,7 @@ struct ControllerView: View {
 
             HStack(alignment: .center, spacing: 10) {
                 VStack(spacing: 14) {
-                    PhotoStick(offset: $leftStick)
-                        .frame(width: 78, height: 78)
+                    PhotoStick(offset: $leftStick).frame(width: 78, height: 78)
                     PhotoDPad()
                         .frame(width: 80, height: 80)
                         .onTapGesture {
@@ -146,9 +203,7 @@ struct ControllerView: View {
                     HStack(spacing: 20) {
                         DotButton(systemImage: "rectangle.on.rectangle", isActive: appState.isMouseMode, activeColor: .blue) {
                             haptic(.medium)
-                            withAnimation(.spring(response: 0.28, dampingFraction: 0.78)) {
-                                appState.isMouseMode.toggle()
-                            }
+                            withAnimation { appState.isMouseMode.toggle() }
                         }
                         DotButton(systemImage: "globe", isActive: appState.isBrowserMode, activeColor: .cyan) {
                             haptic(.medium)
@@ -162,44 +217,22 @@ struct ControllerView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                     .background(glassCard)
-
-                    Button {
-                        haptic(.medium)
-                        appState.isBrowserMode = true
-                    } label: {
-                        Text("Browser")
-                            .font(.system(size: 15, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 42)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Color.black.opacity(0.88))
-                            )
-                    }
-                    .buttonStyle(PressDepthButtonStyle())
                 }
                 .frame(maxWidth: .infinity)
 
                 VStack(spacing: 14) {
-                    PhotoFaceButtons(
-                        y: yColor, x: xColor, b: bColor, a: aColor,
-                        onPress: { key in
-                            haptic(.medium)
-                            // Map A/B/X/Y → CHIP-8 keys 0x5 / 0x6 / 0x4 / 0x1
-                            let map: [String: Int] = ["A": 5, "B": 6, "X": 4, "Y": 1]
-                            if let k = map[key] {
-                                chip8.setKey(k, pressed: true)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                                    chip8.setKey(k, pressed: false)
-                                }
+                    PhotoFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor) { key in
+                        haptic(.medium)
+                        let map: [String: Int] = ["A": 5, "B": 6, "X": 4, "Y": 1]
+                        if let k = map[key] {
+                            chip8.setKey(k, pressed: true)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                                chip8.setKey(k, pressed: false)
                             }
                         }
-                    )
+                    }
                     .frame(width: 92, height: 92)
-
-                    PhotoStick(offset: $rightStick)
-                        .frame(width: 78, height: 78)
+                    PhotoStick(offset: $rightStick).frame(width: 78, height: 78)
                 }
                 .padding(14)
                 .background(glassCard)
@@ -215,7 +248,7 @@ struct ControllerView: View {
                     statusChip(appState.romLoadStatus, color: .cyan)
                 }
             }
-            .padding(.bottom, 10)
+            .padding(.bottom, 6)
         }
     }
 
@@ -266,9 +299,7 @@ struct ControllerView: View {
                 )
 
             if appState.usingBuiltinCore && chip8.isRunning {
-                // REAL emulated pixels
-                EmulatorScreenView()
-                    .padding(4)
+                EmulatorScreenView().padding(4)
             } else if showGamePanel {
                 VStack(spacing: 5) {
                     Text("GAME")
@@ -282,11 +313,9 @@ struct ControllerView: View {
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundStyle(Color.green.opacity(0.9))
                     } else {
-                        Text("CHIP-8 built-in · other systems need .dylib")
-                            .font(.system(size: 9))
+                        Text("No core loaded")
+                            .font(.system(size: 10))
                             .foregroundStyle(Color.orange.opacity(0.9))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 8)
                     }
                 }
             } else {
@@ -301,9 +330,7 @@ struct ControllerView: View {
     private func cleanCoreName(_ raw: String) -> String {
         var s = raw
         if let last = s.split(separator: "/").last { s = String(last) }
-        s = s.replacingOccurrences(of: ".framework", with: "")
-        s = s.replacingOccurrences(of: ".dylib", with: "")
-        return s
+        return s.replacingOccurrences(of: ".dylib", with: "").replacingOccurrences(of: ".framework", with: "")
     }
 
     private func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
@@ -311,20 +338,18 @@ struct ControllerView: View {
     }
 }
 
-// MARK: - Shared components
+// MARK: - Shared components (same as before)
 
 struct DotButton: View {
     let systemImage: String
     let isActive: Bool
     let activeColor: Color
     let action: () -> Void
-
     var body: some View {
         Button(action: action) {
             ZStack {
                 if isActive {
-                    Circle()
-                        .stroke(activeColor.opacity(0.75), lineWidth: 2.5)
+                    Circle().stroke(activeColor.opacity(0.75), lineWidth: 2.5)
                         .frame(width: 28, height: 28)
                         .shadow(color: activeColor.opacity(0.5), radius: 6)
                 }
@@ -345,15 +370,8 @@ struct ControllerSettingsModal: View {
     var onQuit: () -> Void
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var settings: SettingsStore
-    @EnvironmentObject var tweakStore: TweakStore
     @State private var section: SettingsSection = .tweaks
-
-    enum SettingsSection: String, CaseIterable {
-        case tweaks = "Tweaks"
-        case keybinds = "Keybinds"
-        case leave = "Leave"
-    }
-
+    enum SettingsSection: String, CaseIterable { case tweaks = "Tweaks"; case keybinds = "Keybinds"; case leave = "Leave" }
     var body: some View {
         ZStack {
             Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { isPresented = false }
@@ -380,8 +398,8 @@ struct ControllerSettingsModal: View {
                         }
                     case .keybinds:
                         List {
-                            LabeledContent("A/B/X/Y", value: "CHIP-8 keys")
-                            LabeledContent("D-Pad", value: "Key 4")
+                            LabeledContent("A/B/X/Y", value: "Face buttons")
+                            LabeledContent("D-Pad", value: "Touch")
                         }.listStyle(.plain).scrollContentBackground(.hidden)
                     case .leave:
                         VStack(spacing: 16) {
@@ -399,10 +417,6 @@ struct ControllerSettingsModal: View {
             .background(
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 26, style: .continuous)
-                            .stroke(LinearGradient(colors: [.white.opacity(0.4), .white.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2)
-                    )
                     .shadow(color: .black.opacity(0.25), radius: 24, y: 10)
             )
             .padding(28)
@@ -441,12 +455,8 @@ struct PhotoDPad: View {
 }
 
 struct PhotoFaceButtons: View {
-    let y: Color
-    let x: Color
-    let b: Color
-    let a: Color
+    let y: Color; let x: Color; let b: Color; let a: Color
     var onPress: ((String) -> Void)? = nil
-
     var body: some View {
         ZStack {
             face(y, "Y").offset(y: -30)
@@ -455,14 +465,12 @@ struct PhotoFaceButtons: View {
             face(a, "A").offset(y: 30)
         }
     }
-
     private func face(_ color: Color, _ label: String) -> some View {
         Text(label)
             .font(.system(size: 13, weight: .bold, design: .rounded))
             .foregroundStyle(.white)
             .frame(width: 34, height: 34)
             .background(Circle().fill(color))
-            .shadow(color: color.opacity(0.4), radius: 3, y: 1)
             .contentShape(Circle())
             .onTapGesture { onPress?(label) }
     }
