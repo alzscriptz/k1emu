@@ -32,26 +32,16 @@ jobs:
           curl -L -o /tmp/melonds-ios.zip \
             "https://github.com/JesseTG/melonds-ds/releases/download/v1.4.0/melondsds_libretro-ios-Release.zip"
           unzip -o /tmp/melonds-ios.zip -d /tmp/melonds-ios
-          find /tmp/melonds-ios -type f \( -name "*.dylib" -o -name "*.framework" -o -name "melonds*" \) | head -50
-          # Prefer .dylib; also accept framework binary
           DY=$(find /tmp/melonds-ios -name "*.dylib" | head -n 1 || true)
           if [ -n "$DY" ]; then
             cp "$DY" Cores/melondsds_libretro.dylib
-            # aliases CoreLoader looks for
             cp "$DY" Cores/libnds.dylib
             cp "$DY" Cores/melonds.dylib
             ls -lah Cores/
             file Cores/melondsds_libretro.dylib
           else
-            # Sometimes the zip contains a .framework
-            FW=$(find /tmp/melonds-ios -name "*.framework" -type d | head -n 1 || true)
-            if [ -n "$FW" ]; then
-              cp -R "$FW" Cores/
-              ls -la Cores/
-            else
-              echo "WARNING: no dylib found in melonDS zip"
-              find /tmp/melonds-ios -type f | head -40
-            fi
+            echo "WARNING: no dylib in zip"
+            find /tmp/melonds-ios -type f | head -40
           fi
 
       - name: Generate Xcode project
@@ -61,7 +51,6 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p build
-
           xcodebuild \
             -project k1emu.xcodeproj \
             -scheme k1emu \
@@ -71,34 +60,20 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            ONLY_ACTIVE_ARCH=NO \
-            | tee build/xcodebuild.log
+            ONLY_ACTIVE_ARCH=NO
 
           APP=$(find build/DerivedData -name "k1emu.app" -type d | head -n 1)
-          echo "Found app at: $APP"
           test -n "$APP"
 
           rm -rf Payload k1emu.ipa
           mkdir -p Payload
           cp -R "$APP" Payload/k1emu.app
-
           mkdir -p Payload/k1emu.app/Frameworks
-          if [ -d Cores ]; then
-            find Cores -name "*.dylib" -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
-            find Cores -name "*.framework" -type d -exec cp -R {} Payload/k1emu.app/Frameworks/ \; || true
-          fi
-
-          echo "=== Frameworks ==="
-          ls -lah Payload/k1emu.app/Frameworks/ || true
+          find Cores -name "*.dylib" -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
 
           zip -qr k1emu.ipa Payload
           ls -lah k1emu.ipa
-          unzip -l k1emu.ipa | head -60
-
-          if ! unzip -l k1emu.ipa | grep -q "Payload/k1emu.app/"; then
-            echo "ERROR: missing Payload/"
-            exit 1
-          fi
+          unzip -l k1emu.ipa | head -40
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -110,13 +85,16 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.1.0
-          name: k1emu v2.1.0
+          tag_name: v2.2.0
+          name: k1emu v2.2.0
           body: |
-            ## NDS core + Browser dock
-            - Bundles **melonDS DS** (JesseTG) ios-arm64 libretro core as `melondsds_libretro.dylib`
-            - Browser stays docked at the bottom when open
-            - CHIP-8 built-in still works
+            ## Fixes
+            - **NDS core load**: copy dylibs to Documents/Cores + RTLD_LAZY fallback (fixes libnds fail on LiveContainer)
+            - Controller matches reference image (D-pad, GAME, YXBA, sticks, Browser)
+            - Browser stays **inside** Browser panel (not a separate window)
+            - Keyboard mode in Browser panel (third dot)
+            - TV share: GAME panel shows TV MODE only, no game pixels on phone
+            - CHIP-8 still works in GAME panel
 
             Install with LiveContainer / AltStore / SideStore / TrollStore.
           files: k1emu.ipa
