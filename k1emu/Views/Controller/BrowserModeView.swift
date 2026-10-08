@@ -4,42 +4,120 @@ import WebKit
 struct BrowserModeView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var settings: SettingsStore
-    @State private var urlString = "https://www.google.com"
-    @State private var currentURL: URL = URL(string: "https://www.google.com")!
+
+    // Brave Search as default (privacy-first)
+    @State private var addressText = "https://search.brave.com"
+    @State private var currentURL: URL = URL(string: "https://search.brave.com")!
     @State private var showKeyboard = false
-    @State private var addressText = "https://www.google.com"
+    @State private var canGoBack = false
+    @State private var canGoForward = false
+    @State private var isLoading = false
+    @State private var pageTitle = "Brave Search"
 
     var body: some View {
         VStack(spacing: 0) {
-            // Top bar
-            HStack(spacing: 10) {
-                Button {
-                    appState.isBrowserMode = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.white)
+            // Clean Brave-style top bar
+            VStack(spacing: 8) {
+                HStack(spacing: 10) {
+                    Button {
+                        appState.isBrowserMode = false
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+
+                    // Address bar
+                    HStack(spacing: 8) {
+                        Image(systemName: "lock.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.green.opacity(0.85))
+
+                        TextField("Search or enter URL", text: $addressText)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 15))
+                            .foregroundStyle(.primary)
+                            .keyboardType(.URL)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .onSubmit { loadURL() }
+
+                        if isLoading {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                    )
+
+                    Button("Go") { loadURL() }
+                        .font(.subheadline.weight(.semibold))
+                        .buttonStyle(.borderedProminent)
+                        .tint(settings.joystickAccent)
                 }
 
-                TextField("URL", text: $addressText)
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .onSubmit { loadURL() }
+                // Navigation + privacy row
+                HStack(spacing: 18) {
+                    Button { /* goBack via coordinator later */ } label: {
+                        Image(systemName: "chevron.left")
+                            .foregroundStyle(canGoBack ? .primary : .secondary.opacity(0.4))
+                    }
+                    .disabled(!canGoBack)
 
-                Button("Go") { loadURL() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(settings.joystickAccent)
+                    Button { /* goForward */ } label: {
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(canGoForward ? .primary : .secondary.opacity(0.4))
+                    }
+                    .disabled(!canGoForward)
+
+                    Button { loadURL() } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+
+                    Spacer()
+
+                    // Privacy badge
+                    HStack(spacing: 4) {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .font(.caption)
+                        Text("Shields")
+                            .font(.caption2.weight(.medium))
+                    }
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.orange.opacity(0.15)))
+
+                    if appState.isMouseMode {
+                        Text("CURSOR")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.blue)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(Color.blue.opacity(0.15)))
+                    }
+                }
+                .font(.body)
+                .foregroundStyle(.primary)
             }
             .padding(10)
             .background(.ultraThinMaterial)
 
-            // Web view
-            WebView(url: $currentURL)
-                .ignoresSafeArea(edges: .bottom)
+            // Web content
+            WebView(
+                url: $currentURL,
+                isLoading: $isLoading,
+                canGoBack: $canGoBack,
+                canGoForward: $canGoForward,
+                pageTitle: $pageTitle
+            )
+            .ignoresSafeArea(edges: .bottom)
 
-            // Mini keyboard toggle
+            // Optional mini keyboard for controller use
             if showKeyboard {
                 MiniKeyboardView(text: $addressText) {
                     loadURL()
@@ -51,15 +129,14 @@ struct BrowserModeView: View {
                 Button {
                     withAnimation { showKeyboard.toggle() }
                 } label: {
-                    Label(showKeyboard ? "Hide Keyboard" : "Show Keyboard", systemImage: "keyboard")
+                    Label(showKeyboard ? "Hide Keyboard" : "Keyboard", systemImage: "keyboard")
                         .font(.caption)
                 }
                 Spacer()
-                if appState.isMouseMode {
-                    Text("MOUSE ON")
-                        .font(.caption2.bold())
-                        .foregroundStyle(.blue)
-                }
+                Text(pageTitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
             .padding(8)
             .background(.ultraThinMaterial)
@@ -68,7 +145,15 @@ struct BrowserModeView: View {
 
     private func loadURL() {
         var s = addressText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !s.hasPrefix("http") { s = "https://" + s }
+        if s.isEmpty { return }
+
+        // If it looks like a search query, route to Brave Search
+        if !s.contains(".") && !s.hasPrefix("http") {
+            s = "https://search.brave.com/search?q=" + s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
+        } else if !s.hasPrefix("http") {
+            s = "https://" + s
+        }
+
         if let url = URL(string: s) {
             currentURL = url
             addressText = s
@@ -76,11 +161,27 @@ struct BrowserModeView: View {
     }
 }
 
+// MARK: - WebView with basic state
+
 struct WebView: UIViewRepresentable {
     @Binding var url: URL
+    @Binding var isLoading: Bool
+    @Binding var canGoBack: Bool
+    @Binding var canGoForward: Bool
+    @Binding var pageTitle: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
 
     func makeUIView(context: Context) -> WKWebView {
-        let web = WKWebView()
+        let config = WKWebViewConfiguration()
+        // Basic privacy-oriented config
+        config.preferences.javaScriptCanOpenWindowsAutomatically = false
+
+        let web = WKWebView(frame: .zero, configuration: config)
+        web.navigationDelegate = context.coordinator
+        web.allowsBackForwardNavigationGestures = true
         web.load(URLRequest(url: url))
         return web
     }
@@ -90,7 +191,35 @@ struct WebView: UIViewRepresentable {
             uiView.load(URLRequest(url: url))
         }
     }
+
+    class Coordinator: NSObject, WKNavigationDelegate {
+        var parent: WebView
+
+        init(_ parent: WebView) {
+            self.parent = parent
+        }
+
+        func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+            parent.isLoading = true
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            parent.isLoading = false
+            parent.canGoBack = webView.canGoBack
+            parent.canGoForward = webView.canGoForward
+            parent.pageTitle = webView.title ?? ""
+            if let current = webView.url {
+                parent.url = current
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            parent.isLoading = false
+        }
+    }
 }
+
+// MARK: - Mini keyboard for controller
 
 struct MiniKeyboardView: View {
     @Binding var text: String
