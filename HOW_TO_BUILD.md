@@ -1,23 +1,30 @@
 # How to get a real .ipa
 
-## Option A – GitHub Actions (current workflow)
+## Option A – GitHub Actions (recommended)
 
 1. Go to the repository → **Actions** → **Build IPA** → **Run workflow**
-2. Download the artifact `k1emu-ipa`
-3. The IPA is **unsigned**. Install it with:
+2. Wait for the macOS job to finish (real `xcodebuild`)
+3. Download the artifact **k1emu-ipa** or grab it from the Release
+4. The IPA is **unsigned**. Install with:
    - AltStore / SideStore
    - TrollStore (if your device supports it)
-   - `ideviceinstaller` + your own signing
+   - KSign / other sideload tools
    - or resign with your Apple Developer certificate
 
-## Option B – Local Xcode (recommended for development)
+The workflow now runs on `macos-latest`, generates the Xcode project with XcodeGen, builds for `generic/platform=iOS` with signing disabled, and packages a proper `Payload/k1emu.app`.
 
-1. Clone the repo
-2. `brew install xcodegen` (if you don’t have it)
-3. `xcodegen generate`
-4. Open `k1emu.xcodeproj`
-5. Select your team in Signing & Capabilities
-6. Product → Archive → Distribute App → Ad Hoc / Development → Export IPA
+## Option B – Local Xcode (best for development)
+
+```bash
+brew install xcodegen
+git clone https://github.com/alzscriptz/k1emu.git
+cd k1emu
+xcodegen generate
+open k1emu.xcodeproj
+```
+
+1. Select your team in Signing & Capabilities (or leave unsigned)
+2. Product → Archive → Distribute App → Ad Hoc / Development → Export IPA
 
 ## Option C – Fully signed CI IPA
 
@@ -28,11 +35,17 @@ Add these repository secrets:
 - `BUILD_PROVISION_PROFILE_BASE64` – base64 of the .mobileprovision
 - `KEYCHAIN_PASSWORD` – any password for the temporary keychain
 
-Then uncomment the signing steps at the bottom of `.github/workflows/build-ipa.yml`.
+Then extend the workflow with the standard keychain + codesign steps.
 
 ---
 
-**Note on emulator cores**
+## Real cores
 
-The current project is a complete UI shell that implements every screen and interaction you asked for.  
-Real multi-system cores (libretro, etc.) are large C/C++ projects and are intentionally left as the next integration step. The play view is currently a polished placeholder so you can test the entire flow (install ROM, long-press, TV controller mode, browser mode, in-game menu, tweaks, colors, liquid glass, etc.).
+1. Obtain **iphoneos arm64** `.dylib` cores (libretro or custom).
+2. Drop them into the `Cores/` folder.
+3. Rebuild (Actions or local). They get copied into `k1emu.app/Frameworks/`.
+4. `CoreLoader` will `dlopen` them, bind `retro_*` symbols, call `retro_init`, and expose `loadGame` / `runFrame`.
+
+See `Cores/README.md` for suggested filenames and ABI notes.
+
+No cores are bundled by default (size + licensing).
