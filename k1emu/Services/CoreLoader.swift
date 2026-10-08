@@ -1,8 +1,7 @@
 import Foundation
 import Darwin
 
-/// CoreLoader – dlopen ios-arm64 cores. Copies bundle dylibs to Documents/Cores
-/// (LiveContainer / sideload often cannot RTLD_NOW from Frameworks).
+/// Libretro host: dlopen cores, set video callback, run frames into FrameBuffer.
 @MainActor
 final class CoreLoader: ObservableObject {
     static let shared = CoreLoader()
@@ -11,6 +10,7 @@ final class CoreLoader: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var isLibretro: Bool = false
     @Published private(set) var coreVersion: String?
+    @Published private(set) var isRunning: Bool = false
     @Published private(set) var triedPaths: [String] = []
 
     private var handle: UnsafeMutableRawPointer?
@@ -21,9 +21,23 @@ final class CoreLoader: ObservableObject {
     private var sym_unload_game: UnsafeMutableRawPointer?
     private var sym_run: UnsafeMutableRawPointer?
     private var sym_reset: UnsafeMutableRawPointer?
+    private var sym_set_video: UnsafeMutableRawPointer?
+    private var sym_set_input_poll: UnsafeMutableRawPointer?
+    private var sym_set_input_state: UnsafeMutableRawPointer?
+    private var sym_set_audio: UnsafeMutableRawPointer?
+    private var sym_set_audio_batch: UnsafeMutableRawPointer?
+    private var sym_set_env: UnsafeMutableRawPointer?
+    private var runTimer: Timer?
+    private var pixelFormatRGB565 = false
 
     private let coreNames: [String: [String]] = [
-        "NDS": ["melondsds_libretro", "melondsds", "melonds", "libnds", "nds_libretro", "desmume"]
+        "NDS": ["melondsds_libretro", "libnds", "melonds", "melondsds", "nds_libretro", "desmume"],
+        "GBA": ["mgba_libretro", "gba_libretro", "mgba"],
+        "GB":  ["gambatte_libretro", "sameboy_libretro", "gb_libretro"],
+        "GBC": ["gambatte_libretro", "sameboy_libretro", "gbc_libretro"],
+        "NES": ["fceumm_libretro", "nestopia_libretro", "nes_libretro"],
+        "SNES": ["snes9x_libretro", "snes_libretro"],
+        "CHIP8": []
     ]
 
     private var documentsCores: URL {
@@ -37,8 +51,7 @@ final class CoreLoader: ObservableObject {
         let fm = FileManager.default
         var sources: [URL] = []
         if let exe = Bundle.main.executableURL?.deletingLastPathComponent() {
-            sources.append(exe.appendingPathComponent("Frameworks"))
-            sources.append(exe)
+            sources.append(exe.appendingPathComponent("Frameworks")); sources.append(exe)
         }
         if let res = Bundle.main.resourceURL {
             sources.append(res.appendingPathComponent("Frameworks"))
@@ -51,9 +64,9 @@ final class CoreLoader: ObservableObject {
             for f in files where f.pathExtension == "dylib" {
                 let dest = documentsCores.appendingPathComponent(f.lastPathComponent)
                 if fm.fileExists(atPath: dest.path) {
-                    let srcSize = (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                    let dstSize = (try? dest.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-                    if srcSize == dstSize { continue }
+                    let a = (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    let b = (try? dest.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    if a == b { continue }
                     try? fm.removeItem(at: dest)
                 }
                 try? fm.copyItem(at: f, to: dest)
@@ -62,10 +75,9 @@ final class CoreLoader: ObservableObject {
     }
 
     private var searchDirs: [URL] {
-        var dirs: [URL] = [documentsCores]
+        var dirs = [documentsCores]
         if let exe = Bundle.main.executableURL?.deletingLastPathComponent() {
-            dirs.append(exe.appendingPathComponent("Frameworks"))
-            dirs.append(exe)
+            dirs.append(exe.appendingPathComponent("Frameworks")); dirs.append(exe)
         }
         if let res = Bundle.main.resourceURL {
             dirs.append(res.appendingPathComponent("Frameworks"))
@@ -75,14 +87,22 @@ final class CoreLoader: ObservableObject {
         return dirs
     }
 
-    func listAvailableCores() -> [String] {
-        prepareBundledCores()
-        var names: [String] = []
-        for dir in searchDirs {
-            guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
-            for f in files where f.pathExtension == "dylib" { names.append(f.lastPathComponent) }
+    /// Auto-pick system from filename extension
+    static func detectSystem(fileName: String) -> String {
+        let ext = (fileName as NSString).pathExtension.lowercased()
+        switch ext {
+        case "nds", "dsi", "ids": return "NDS"
+        case "gba": return "GBA"
+        case "gb": return "GB"
+        case "gbc": return "GBC"
+        case "nes", "fds": return "NES"
+        case "sfc", "smc": return "SNES"
+        case "ch8", "c8": return "CHIP8"
+        case "n64", "z64", "v64": return "N64"
+        case "md", "gen", "smd": return "Genesis"
+        case "zip": return "NDS" // common packed DS ROM — user can override
+        default: return "Other"
         }
-        return Array(Set(names)).sorted()
     }
 
     @discardableResult
@@ -101,7 +121,6 @@ final class CoreLoader: ObservableObject {
         }
 
         var lastDlError = ""
-
         for dir in searchDirs {
             for base in candidates {
                 let url = dir.appendingPathComponent("\(base).dylib")
@@ -114,7 +133,9 @@ final class CoreLoader: ObservableObject {
             if let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
                 for f in files where f.pathExtension == "dylib" {
                     let lower = f.lastPathComponent.lowercased()
-                    if key == "NDS" && (lower.contains("melon") || lower.contains("nds") || lower.contains("desmume")) {
+                    let match = (key == "NDS" && (lower.contains("melon") || lower.contains("nds")))
+                        || lower.contains(key.lowercased())
+                    if match {
                         triedPaths.append(f.path)
                         if open(path: f.path, name: displayName(f.lastPathComponent)) { return true }
                         lastDlError = lastError ?? ""
@@ -124,12 +145,9 @@ final class CoreLoader: ObservableObject {
         }
 
         let found = triedPaths.filter { FileManager.default.fileExists(atPath: $0) }
-        if found.isEmpty {
-            lastError = "No NDS dylib found in Frameworks or Documents/Cores"
-        } else {
-            lastError = "dlopen failed: \(lastDlError). Tried: \(found.map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))"
-        }
-        loadedCoreName = nil
+        lastError = found.isEmpty
+            ? "No dylib for \(system)"
+            : "dlopen failed: \(lastDlError)"
         return false
     }
 
@@ -137,62 +155,122 @@ final class CoreLoader: ObservableObject {
         _ = dlerror()
         var h = dlopen(path, RTLD_LAZY | RTLD_LOCAL)
         if h == nil {
-            let err1 = dlerror().map { String(cString: $0) } ?? "nil"
+            let e1 = dlerror().map { String(cString: $0) } ?? ""
             _ = dlerror()
             h = dlopen(path, RTLD_NOW | RTLD_LOCAL)
             if h == nil {
-                let err2 = dlerror().map { String(cString: $0) } ?? "nil"
-                lastError = "\(err2) [also LAZY: \(err1)]"
+                lastError = dlerror().map { String(cString: $0) } ?? e1
                 return false
             }
         }
 
         handle = h
         loadedCoreName = name
-        sym_api_version = dlsym(h, "retro_api_version")
-        sym_init        = dlsym(h, "retro_init")
-        sym_deinit      = dlsym(h, "retro_deinit")
-        sym_load_game   = dlsym(h, "retro_load_game")
-        sym_unload_game = dlsym(h, "retro_unload_game")
-        sym_run         = dlsym(h, "retro_run")
-        sym_reset       = dlsym(h, "retro_reset")
 
-        if sym_api_version != nil && sym_init != nil {
-            isLibretro = true
-            typealias ApiVersionFn = @convention(c) () -> Int32
-            coreVersion = "libretro API \(unsafeBitCast(sym_api_version!, to: ApiVersionFn.self)())"
-            typealias InitFn = @convention(c) () -> Void
-            unsafeBitCast(sym_init!, to: InitFn.self)()
-        } else {
-            isLibretro = false
-            coreVersion = "loaded (no retro_* symbols)"
+        sym_api_version = dlsym(h, "retro_api_version")
+        sym_init = dlsym(h, "retro_init")
+        sym_deinit = dlsym(h, "retro_deinit")
+        sym_load_game = dlsym(h, "retro_load_game")
+        sym_unload_game = dlsym(h, "retro_unload_game")
+        sym_run = dlsym(h, "retro_run")
+        sym_reset = dlsym(h, "retro_reset")
+        sym_set_video = dlsym(h, "retro_set_video_refresh")
+        sym_set_input_poll = dlsym(h, "retro_set_input_poll")
+        sym_set_input_state = dlsym(h, "retro_set_input_state")
+        sym_set_audio = dlsym(h, "retro_set_audio_sample")
+        sym_set_audio_batch = dlsym(h, "retro_set_audio_sample_batch")
+        sym_set_env = dlsym(h, "retro_set_environment")
+
+        guard sym_api_version != nil, sym_init != nil else {
+            lastError = "Not a libretro core"
+            dlclose(h); handle = nil
+            return false
         }
+
+        isLibretro = true
+
+        // Environment (pixel format etc.)
+        if let envSym = sym_set_env {
+            typealias EnvFn = @convention(c) (@escaping @convention(c) (UInt32, UnsafeMutableRawPointer?) -> Bool) -> Void
+            unsafeBitCast(envSym, to: EnvFn.self)(coreEnvironment)
+        }
+
+        // Video → FrameBuffer
+        if let vSym = sym_set_video {
+            typealias SetVideo = @convention(c) (@escaping @convention(c) (UnsafeRawPointer?, UInt32, UInt32, Int) -> Void) -> Void
+            unsafeBitCast(vSym, to: SetVideo.self)(coreVideoRefresh)
+        }
+
+        // Input stubs
+        if let pSym = sym_set_input_poll {
+            typealias SetPoll = @convention(c) (@escaping @convention(c) () -> Void) -> Void
+            unsafeBitCast(pSym, to: SetPoll.self)({})
+        }
+        if let sSym = sym_set_input_state {
+            typealias SetState = @convention(c) (@escaping @convention(c) (UInt32, UInt32, UInt32, UInt32) -> Int16) -> Void
+            unsafeBitCast(sSym, to: SetState.self)({ _, _, _, _ in 0 })
+        }
+
+        // Audio stubs
+        if let aSym = sym_set_audio {
+            typealias SetAudio = @convention(c) (@escaping @convention(c) (Int16, Int16) -> Void) -> Void
+            unsafeBitCast(aSym, to: SetAudio.self)({ _, _ in })
+        }
+        if let bSym = sym_set_audio_batch {
+            typealias SetBatch = @convention(c) (@escaping @convention(c) (UnsafePointer<Int16>?, Int) -> Int) -> Void
+            unsafeBitCast(bSym, to: SetBatch.self)({ _, frames in frames })
+        }
+
+        typealias ApiVersionFn = @convention(c) () -> Int32
+        coreVersion = "libretro API \(unsafeBitCast(sym_api_version!, to: ApiVersionFn.self)())"
+
+        typealias InitFn = @convention(c) () -> Void
+        unsafeBitCast(sym_init!, to: InitFn.self)()
+
         lastError = nil
         return true
     }
 
-    /// retro_game_info layout via raw bytes (path*, data*, size, meta*)
     func loadGame(path: String) -> Bool {
         guard isLibretro, let loadSym = sym_load_game else {
             lastError = "Core missing retro_load_game"
             return false
         }
-        return path.withCString { cPath in
-            // Allocate buffer large enough for 4 fields on 64-bit
+        let ok = path.withCString { cPath -> Bool in
             let ptrSize = MemoryLayout<UnsafeRawPointer?>.size
             let intSize = MemoryLayout<Int>.size
             var buf = [UInt8](repeating: 0, count: ptrSize * 3 + intSize)
-            // path at offset 0
             withUnsafeBytes(of: Optional(cPath)) { src in
                 for i in 0..<min(src.count, ptrSize) { buf[i] = src[i] }
             }
-            // data = nil (already zero), size = 0, meta = nil
             typealias LoadGameFn = @convention(c) (UnsafeRawPointer?) -> Bool
-            let loadFn = unsafeBitCast(loadSym, to: LoadGameFn.self)
-            let ok = buf.withUnsafeBytes { raw in loadFn(raw.baseAddress) }
-            if !ok { lastError = "retro_load_game returned false" }
-            return ok
+            return buf.withUnsafeBytes { raw in
+                unsafeBitCast(loadSym, to: LoadGameFn.self)(raw.baseAddress)
+            }
         }
+        if !ok {
+            lastError = "retro_load_game failed (need BIOS? bad ROM?)"
+            return false
+        }
+        startRunLoop()
+        return true
+    }
+
+    private func startRunLoop() {
+        stopRunLoop()
+        isRunning = true
+        // ~60 FPS
+        runTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.runFrame()
+            }
+        }
+    }
+
+    private func stopRunLoop() {
+        runTimer?.invalidate()
+        runTimer = nil
+        isRunning = false
     }
 
     func runFrame() {
@@ -208,12 +286,15 @@ final class CoreLoader: ObservableObject {
     }
 
     func unloadGame() {
+        stopRunLoop()
         guard let unloadSym = sym_unload_game else { return }
         typealias UnloadFn = @convention(c) () -> Void
         unsafeBitCast(unloadSym, to: UnloadFn.self)()
     }
 
     func unload() {
+        stopRunLoop()
+        FrameBuffer.shared.clear()
         if isLibretro {
             unloadGame()
             if let deinitSym = sym_deinit {
@@ -227,6 +308,8 @@ final class CoreLoader: ObservableObject {
         coreVersion = nil
         sym_init = nil; sym_deinit = nil; sym_api_version = nil
         sym_load_game = nil; sym_unload_game = nil; sym_run = nil; sym_reset = nil
+        sym_set_video = nil; sym_set_input_poll = nil; sym_set_input_state = nil
+        sym_set_audio = nil; sym_set_audio_batch = nil; sym_set_env = nil
     }
 
     private func displayName(_ raw: String) -> String {
@@ -236,4 +319,36 @@ final class CoreLoader: ObservableObject {
     }
 
     deinit { if let h = handle { dlclose(h) } }
+}
+
+// MARK: - C callbacks (must be non-capturing / global)
+
+private let RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: UInt32 = 10
+private let RETRO_PIXEL_FORMAT_0RGB1555: Int32 = 0
+private let RETRO_PIXEL_FORMAT_XRGB8888: Int32 = 1
+private let RETRO_PIXEL_FORMAT_RGB565: Int32 = 2
+
+private var g_useRGB565 = false
+
+private func coreEnvironment(cmd: UInt32, data: UnsafeMutableRawPointer?) -> Bool {
+    if cmd == RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, let data {
+        let fmt = data.assumingMemoryBound(to: Int32.self).pointee
+        g_useRGB565 = (fmt == RETRO_PIXEL_FORMAT_RGB565)
+        return true
+    }
+    // Accept common env cmds as no-op success so cores keep going
+    let softFail: Set<UInt32> = [1, 2, 3, 5, 6, 9, 11, 15, 16, 17, 18, 19, 20, 21, 22]
+    if softFail.contains(cmd) { return false }
+    return false
+}
+
+private func coreVideoRefresh(data: UnsafeRawPointer?, width: UInt32, height: UInt32, pitch: Int) {
+    guard data != nil, width > 0, height > 0 else { return }
+    FrameBuffer.shared.update(
+        data: data,
+        width: Int(width),
+        height: Int(height),
+        pitch: pitch,
+        isRGB565: g_useRGB565
+    )
 }
