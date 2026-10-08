@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -25,24 +25,99 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Fetch NDS core (melonDS DS iOS arm64)
+      - name: Download libretro iOS-arm64 cores (buildbot nightly)
         run: |
           set -euxo pipefail
-          mkdir -p Cores
-          curl -L -o /tmp/melonds-ios.zip \
-            "https://github.com/JesseTG/melonds-ds/releases/download/v1.4.0/melondsds_libretro-ios-Release.zip"
-          unzip -o /tmp/melonds-ios.zip -d /tmp/melonds-ios
-          DY=$(find /tmp/melonds-ios -name "*.dylib" | head -n 1 || true)
-          if [ -n "$DY" ]; then
-            cp "$DY" Cores/melondsds_libretro.dylib
-            cp "$DY" Cores/libnds.dylib
-            cp "$DY" Cores/melonds.dylib
-            ls -lah Cores/
-            file Cores/melondsds_libretro.dylib
-          else
-            echo "WARNING: no dylib in zip"
-            find /tmp/melonds-ios -type f | head -40
-          fi
+          BASE="https://buildbot.libretro.com/nightly/apple/ios-arm64/latest"
+          mkdir -p Cores /tmp/corezips /tmp/coreextract
+
+          # Curated set: all Nintendo + common systems. Skip 20–90MB MAME builds.
+          CORES=(
+            # NDS
+            melondsds_libretro.dylib.zip
+            melonds_libretro_ios.dylib.zip
+            desmume_libretro_ios.dylib.zip
+            noods_libretro_ios.dylib.zip
+            # GBA
+            mgba_libretro.dylib.zip
+            gpsp_libretro_ios.dylib.zip
+            vbam_libretro_ios.dylib.zip
+            vba_next_libretro_ios.dylib.zip
+            mednafen_gba_libretro_ios.dylib.zip
+            # GB / GBC
+            gambatte_libretro_ios.dylib.zip
+            sameboy_libretro_ios.dylib.zip
+            gearboy_libretro_ios.dylib.zip
+            # NES
+            fceumm_libretro_ios.dylib.zip
+            nestopia_libretro_ios.dylib.zip
+            quicknes_libretro_ios.dylib.zip
+            mesen_libretro_ios.dylib.zip
+            # SNES
+            snes9x_libretro_ios.dylib.zip
+            snes9x2010_libretro_ios.dylib.zip
+            snes9x2005_plus_libretro_ios.dylib.zip
+            bsnes_libretro_ios.dylib.zip
+            mednafen_snes_libretro_ios.dylib.zip
+            # N64
+            mupen64plus_next_libretro_ios.dylib.zip
+            parallel_n64_libretro_ios.dylib.zip
+            # Genesis / SMS
+            genesis_plus_gx_libretro_ios.dylib.zip
+            picodrive_libretro_ios.dylib.zip
+            # PS1
+            pcsx_rearmed_libretro_ios.dylib.zip
+            swanstation_libretro.dylib.zip
+            # PSP / DC
+            ppsspp_libretro.dylib.zip
+            flycast_libretro.dylib.zip
+            # Virtual Boy / WonderSwan
+            mednafen_vb_libretro_ios.dylib.zip
+            mednafen_wswan_libretro_ios.dylib.zip
+            pokemini_libretro_ios.dylib.zip
+          )
+
+          download_one() {
+            local z="$1"
+            local url="$BASE/$z"
+            echo "GET $z"
+            if curl -fsSL --retry 3 --retry-delay 2 -o "/tmp/corezips/$z" "$url"; then
+              unzip -o -q "/tmp/corezips/$z" -d /tmp/coreextract || true
+            else
+              echo "WARN: failed $z"
+            fi
+          }
+
+          # Parallel downloads (limit jobs)
+          for z in "${CORES[@]}"; do
+            download_one "$z" &
+            # throttle to ~8 concurrent
+            while [ "$(jobs -rp | wc -l)" -ge 8 ]; do sleep 0.5; done
+          done
+          wait
+
+          # Collect dylibs → Cores/ with normalized names (drop _ios suffix)
+          find /tmp/coreextract -type f -name "*.dylib" | while read -r f; do
+            base="$(basename "$f")"
+            # normalize: foo_libretro_ios.dylib → foo_libretro.dylib
+            norm="${base//_ios.dylib/.dylib}"
+            cp "$f" "Cores/$norm"
+            # also keep original name
+            cp "$f" "Cores/$base"
+          done
+
+          # Convenience aliases for CoreLoader
+          [ -f Cores/melondsds_libretro.dylib ] && cp Cores/melondsds_libretro.dylib Cores/libnds.dylib || true
+          [ -f Cores/melonds_libretro.dylib ] && cp Cores/melonds_libretro.dylib Cores/melonds.dylib || true
+          [ -f Cores/mgba_libretro.dylib ] && cp Cores/mgba_libretro.dylib Cores/libgba.dylib || true
+          [ -f Cores/fceumm_libretro.dylib ] && cp Cores/fceumm_libretro.dylib Cores/libnes.dylib || true
+          [ -f Cores/snes9x_libretro.dylib ] && cp Cores/snes9x_libretro.dylib Cores/libsnes.dylib || true
+          [ -f Cores/gambatte_libretro.dylib ] && cp Cores/gambatte_libretro.dylib Cores/libgb.dylib || true
+
+          echo "=== Cores packaged ==="
+          ls -lah Cores/ | head -80
+          echo "Count: $(ls Cores/*.dylib 2>/dev/null | wc -l)"
+          du -sh Cores
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -69,11 +144,17 @@ jobs:
           mkdir -p Payload
           cp -R "$APP" Payload/k1emu.app
           mkdir -p Payload/k1emu.app/Frameworks
+
+          # Ship every core dylib
           find Cores -name "*.dylib" -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
+
+          echo "=== Frameworks ==="
+          ls Payload/k1emu.app/Frameworks/ | wc -l
+          du -sh Payload/k1emu.app/Frameworks
 
           zip -qr k1emu.ipa Payload
           ls -lah k1emu.ipa
-          unzip -l k1emu.ipa | head -40
+          unzip -l k1emu.ipa | head -80
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -85,16 +166,15 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.2.0
-          name: k1emu v2.2.0
+          tag_name: v2.3.0
+          name: k1emu v2.3.0 — libretro nightly cores
           body: |
-            ## Fixes
-            - **NDS core load**: copy dylibs to Documents/Cores + RTLD_LAZY fallback (fixes libnds fail on LiveContainer)
-            - Controller matches reference image (D-pad, GAME, YXBA, sticks, Browser)
-            - Browser stays **inside** Browser panel (not a separate window)
-            - Keyboard mode in Browser panel (third dot)
-            - TV share: GAME panel shows TV MODE only, no game pixels on phone
-            - CHIP-8 still works in GAME panel
+            ## Cores from buildbot.libretro.com (ios-arm64 nightly)
+            Nintendo: NDS (melonDS DS, melonDS, DeSmuME, NooDS), GBA (mGBA, gpSP, VBA), GB/GBC (Gambatte, SameBoy), NES (FCEUmm, Nestopia), SNES (Snes9x, bsnes), N64 (Mupen64Plus-Next, Parallel).
+            Also: Genesis, PS1, PSP, Dreamcast, Virtual Boy, WonderSwan, Pokémini.
+
+            ROM load uses in-memory data (required by melonDS).
+            Drop BIOS in Files → k1emu → system when needed.
 
             Install with LiveContainer / AltStore / SideStore / TrollStore.
           files: k1emu.ipa
