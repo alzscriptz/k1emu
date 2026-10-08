@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-/// Libretro host. melonDS REQUIRES info->data + size (not path-only).
+/// Libretro host. melonDS requires info->data + size (ROM bytes in memory).
 @MainActor
 final class CoreLoader: ObservableObject {
     static let shared = CoreLoader()
@@ -29,22 +29,18 @@ final class CoreLoader: ObservableObject {
     private var sym_set_audio_batch: UnsafeMutableRawPointer?
     private var sym_set_env: UnsafeMutableRawPointer?
     private var runTimer: Timer?
-
-    /// Keep ROM bytes alive for the core (melonDS reads from this pointer)
     private var romDataHolder: Data?
 
     private let coreNames: [String: [String]] = [
-        "NDS":  ["melondsds_libretro", "libnds", "melonds", "melondsds", "nds_libretro", "desmume"],
-        "GBA":  ["mgba_libretro", "gba_libretro", "mgba", "vba_next"],
+        "NDS":  ["melondsds_libretro", "libnds", "melonds", "melondsds", "nds_libretro"],
+        "GBA":  ["mgba_libretro", "gba_libretro", "mgba"],
         "GB":   ["gambatte_libretro", "sameboy_libretro", "gb_libretro"],
         "GBC":  ["gambatte_libretro", "sameboy_libretro", "gbc_libretro"],
         "NES":  ["fceumm_libretro", "nestopia_libretro", "nes_libretro"],
-        "SNES": ["snes9x_libretro", "bsnes_libretro", "snes_libretro"],
+        "SNES": ["snes9x_libretro", "snes_libretro"],
         "N64":  ["mupen64plus_next_libretro", "parallel_n64_libretro"],
         "CHIP8": []
     ]
-
-    // MARK: - Directories (libretro env)
 
     var systemDirectory: URL {
         let u = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -95,17 +91,14 @@ final class CoreLoader: ObservableObject {
                     if a == b { continue }
                     try? fm.removeItem(at: dest)
                 }
-                do {
-                    try fm.copyItem(at: f, to: dest)
-                    log("Copied core → Documents/Cores/\(f.lastPathComponent)")
-                } catch {
-                    log("Copy core failed: \(error.localizedDescription)")
-                }
+                try? fm.copyItem(at: f, to: dest)
             }
         }
-        // Ensure system/saves exist for BIOS
         _ = systemDirectory
         _ = saveDirectory
+        // Publish paths for C env callback
+        g_systemDirPath = systemDirectory.path
+        g_saveDirPath = saveDirectory.path
     }
 
     func listAvailableCores() -> [String] {
@@ -138,16 +131,14 @@ final class CoreLoader: ObservableObject {
         case "gba": return "GBA"
         case "gb": return "GB"
         case "gbc": return "GBC"
-        case "nes", "fds", "unf", "nsf": return "NES"
-        case "sfc", "smc", "fig": return "SNES"
+        case "nes", "fds", "unf": return "NES"
+        case "sfc", "smc": return "SNES"
         case "n64", "z64", "v64": return "N64"
         case "ch8", "c8": return "CHIP8"
         case "zip": return "NDS"
         default: return "Other"
         }
     }
-
-    // MARK: - Load core
 
     @discardableResult
     func loadCore(for system: String) -> Bool {
@@ -160,7 +151,7 @@ final class CoreLoader: ObservableObject {
         prepareBundledCores()
 
         let key = system.uppercased()
-        log("Loading core for \(key)")
+        log("Core for \(key)")
 
         var candidates = coreNames[key] ?? []
         if key == "NDS" {
@@ -173,24 +164,18 @@ final class CoreLoader: ObservableObject {
                 let url = dir.appendingPathComponent("\(base).dylib")
                 triedPaths.append(url.path)
                 if FileManager.default.fileExists(atPath: url.path) {
-                    log("Trying \(url.lastPathComponent) in \(dir.lastPathComponent)")
                     if open(path: url.path, name: base) {
-                        log("dlopen OK: \(base)")
+                        log("OK \(base)")
                         return true
                     }
                     lastDlError = lastError ?? ""
-                    log("dlopen fail: \(lastDlError)")
                 }
             }
             if let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
                 for f in files where f.pathExtension == "dylib" {
                     let lower = f.lastPathComponent.lowercased()
-                    let match = (key == "NDS" && (lower.contains("melon") || lower.contains("nds")))
-                        || lower.contains(key.lowercased())
-                    if match {
-                        triedPaths.append(f.path)
+                    if key == "NDS" && (lower.contains("melon") || lower.contains("nds")) {
                         if open(path: f.path, name: displayName(f.lastPathComponent)) {
-                            log("dlopen OK (scan): \(f.lastPathComponent)")
                             return true
                         }
                         lastDlError = lastError ?? ""
@@ -200,10 +185,7 @@ final class CoreLoader: ObservableObject {
         }
 
         let found = triedPaths.filter { FileManager.default.fileExists(atPath: $0) }
-        lastError = found.isEmpty
-            ? "No dylib for \(system). Put melondsds_libretro.dylib in Frameworks"
-            : "dlopen failed: \(lastDlError)"
-        log(lastError ?? "")
+        lastError = found.isEmpty ? "No dylib for \(system)" : "dlopen: \(lastDlError)"
         return false
     }
 
@@ -238,18 +220,15 @@ final class CoreLoader: ObservableObject {
         sym_set_env = dlsym(h, "retro_set_environment")
 
         guard sym_api_version != nil, sym_init != nil else {
-            lastError = "Not a libretro core (missing retro_init)"
+            lastError = "Not libretro"
             dlclose(h); handle = nil
             return false
         }
 
         isLibretro = true
+        g_systemDirPath = systemDirectory.path
+        g_saveDirPath = saveDirectory.path
 
-        // Publish dirs for C environment callback
-        CoreEnvBridge.shared.systemDir = systemDirectory.path
-        CoreEnvBridge.shared.saveDir = saveDirectory.path
-
-        // ORDER: environment → video/audio/input → init
         if let envSym = sym_set_env {
             typealias EnvFn = @convention(c) (@escaping @convention(c) (UInt32, UnsafeMutableRawPointer?) -> Bool) -> Void
             unsafeBitCast(envSym, to: EnvFn.self)(coreEnvironment)
@@ -276,70 +255,66 @@ final class CoreLoader: ObservableObject {
         }
 
         typealias ApiVersionFn = @convention(c) () -> Int32
-        coreVersion = "libretro API \(unsafeBitCast(sym_api_version!, to: ApiVersionFn.self)())"
-
+        coreVersion = "API \(unsafeBitCast(sym_api_version!, to: ApiVersionFn.self)())"
         typealias InitFn = @convention(c) () -> Void
         unsafeBitCast(sym_init!, to: InitFn.self)()
-        log("retro_init done")
-
         lastError = nil
         return true
     }
 
-    // MARK: - Load game (CRITICAL: pass data + size for melonDS)
-
+    /// melonDS: LoadROM((u8*)info->data, info->size, ...) — MUST pass bytes
     func loadGame(path: String) -> Bool {
         guard isLibretro, let loadSym = sym_load_game else {
-            lastError = "Core missing retro_load_game"
-            log(lastError!)
+            lastError = "No retro_load_game"
             return false
         }
-
         guard FileManager.default.fileExists(atPath: path) else {
-            lastError = "ROM file missing: \((path as NSString).lastPathComponent)"
-            log(lastError!)
+            lastError = "ROM missing"
             return false
         }
-
-        // Load entire ROM into memory — melonDS uses info->data / info->size
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)), !data.isEmpty else {
             lastError = "Cannot read ROM"
-            log(lastError!)
-            return false
-        }
-        if data.isEmpty {
-            lastError = "ROM is empty"
             return false
         }
 
         romDataHolder = data
-        log("ROM size \(data.count) bytes")
+        log("ROM \(data.count) bytes")
 
-        let ok = data.withUnsafeBytes { rawBuf -> Bool in
-            guard let dataPtr = rawBuf.baseAddress else { return false }
+        // Pack C struct as raw bytes: path*, data*, size, meta*
+        let ok = data.withUnsafeBytes { romBuf -> Bool in
+            guard let dataPtr = romBuf.baseAddress else { return false }
             return path.withCString { cPath -> Bool in
-                // struct retro_game_info { path*, data*, size, meta* }
-                // arm64: 4 x 8-byte fields
-                var info = RetroGameInfoC(
-                    path: cPath,
-                    data: dataPtr,
-                    size: data.count,
-                    meta: nil
-                )
-                typealias LoadGameFn = @convention(c) (UnsafePointer<RetroGameInfoC>?) -> Bool
-                let fn = unsafeBitCast(loadSym, to: LoadGameFn.self)
-                return withUnsafePointer(to: &info) { fn($0) }
+                let ptrSize = MemoryLayout<UnsafeRawPointer?>.size  // 8
+                let intSize = MemoryLayout<Int>.size               // 8
+                var buf = [UInt8](repeating: 0, count: ptrSize * 3 + intSize)
+
+                // offset 0: path
+                withUnsafeBytes(of: Optional(cPath)) { src in
+                    for i in 0..<min(src.count, ptrSize) { buf[i] = src[i] }
+                }
+                // offset 8: data
+                withUnsafeBytes(of: Optional(dataPtr)) { src in
+                    for i in 0..<min(src.count, ptrSize) { buf[ptrSize + i] = src[i] }
+                }
+                // offset 16: size
+                withUnsafeBytes(of: data.count) { src in
+                    for i in 0..<min(src.count, intSize) { buf[ptrSize * 2 + i] = src[i] }
+                }
+                // offset 24: meta = nil
+
+                typealias LoadFn = @convention(c) (UnsafeRawPointer?) -> Bool
+                let fn = unsafeBitCast(loadSym, to: LoadFn.self)
+                return buf.withUnsafeBytes { raw in fn(raw.baseAddress) }
             }
         }
 
         if !ok {
-            lastError = "retro_load_game failed — need bios7.bin/bios9.bin in Files→k1emu→system? Or bad ROM"
-            log(lastError!)
+            lastError = "retro_load_game failed — put bios7.bin + bios9.bin in Files→k1emu→system"
             romDataHolder = nil
             return false
         }
 
-        log("retro_load_game OK — starting run loop")
+        log("Game loaded")
         startRunLoop()
         return true
     }
@@ -365,16 +340,17 @@ final class CoreLoader: ObservableObject {
     }
 
     func reset() {
-        guard let resetSym = sym_reset else { return }
-        typealias ResetFn = @convention(c) () -> Void
-        unsafeBitCast(resetSym, to: ResetFn.self)()
+        guard let s = sym_reset else { return }
+        typealias F = @convention(c) () -> Void
+        unsafeBitCast(s, to: F.self)()
     }
 
     func unloadGame() {
         stopRunLoop()
-        guard let unloadSym = sym_unload_game else { return }
-        typealias UnloadFn = @convention(c) () -> Void
-        unsafeBitCast(unloadSym, to: UnloadFn.self)()
+        if let s = sym_unload_game {
+            typealias F = @convention(c) () -> Void
+            unsafeBitCast(s, to: F.self)()
+        }
         romDataHolder = nil
     }
 
@@ -383,9 +359,9 @@ final class CoreLoader: ObservableObject {
         FrameBuffer.shared.clear()
         if isLibretro {
             unloadGame()
-            if let deinitSym = sym_deinit {
-                typealias DeinitFn = @convention(c) () -> Void
-                unsafeBitCast(deinitSym, to: DeinitFn.self)()
+            if let s = sym_deinit {
+                typealias F = @convention(c) () -> Void
+                unsafeBitCast(s, to: F.self)()
             }
         }
         if let h = handle { dlclose(h); handle = nil }
@@ -408,120 +384,63 @@ final class CoreLoader: ObservableObject {
     deinit { if let h = handle { dlclose(h) } }
 }
 
-// C-layout retro_game_info (must match libretro.h)
-private struct RetroGameInfoC {
-    var path: UnsafePointer<CChar>?
-    var data: UnsafeRawPointer?
-    var size: Int
-    var meta: UnsafePointer<CChar>?
-}
+// MARK: - Global env paths + C callbacks
 
-// Bridge for environment paths (C callback cannot capture self)
-final class CoreEnvBridge {
-    static let shared = CoreEnvBridge()
-    var systemDir: String = ""
-    var saveDir: String = ""
-    // Keep C strings alive
-    private var systemCStr: [CChar] = []
-    private var saveCStr: [CChar] = []
-
-    func systemCString() -> UnsafePointer<CChar>? {
-        systemCStr = systemDir.cString(using: .utf8) ?? []
-        return systemCStr.withUnsafeBufferPointer { $0.baseAddress }
-    }
-
-    func saveCString() -> UnsafePointer<CChar>? {
-        saveCStr = saveDir.cString(using: .utf8) ?? []
-        return saveCStr.withUnsafeBufferPointer { $0.baseAddress }
-    }
-}
-
-// MARK: - Environment / video (global C functions)
-
-private let RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY: UInt32 = 9
-private let RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: UInt32 = 10
-private let RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY: UInt32 = 19
-private let RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME: UInt32 = 18
-private let RETRO_ENVIRONMENT_GET_LOG_INTERFACE: UInt32 = 27
-private let RETRO_ENVIRONMENT_SET_VARIABLES: UInt32 = 16
-private let RETRO_ENVIRONMENT_GET_VARIABLE: UInt32 = 15
-private let RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE: UInt32 = 17
-private let RETRO_ENVIRONMENT_GET_CAN_DUPE: UInt32 = 3
-private let RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS: UInt32 = 11
-private let RETRO_ENVIRONMENT_SET_CONTROLLER_INFO: UInt32 = 35
-private let RETRO_ENVIRONMENT_GET_INPUT_BITMASKS: UInt32 = 51
-private let RETRO_PIXEL_FORMAT_RGB565: Int32 = 2
-
+private var g_systemDirPath = ""
+private var g_saveDirPath = ""
+private var g_systemDirCStr: UnsafeMutablePointer<CChar>?
+private var g_saveDirCStr: UnsafeMutablePointer<CChar>?
 private var g_useRGB565 = false
+
+private let ENV_GET_SYSTEM_DIRECTORY: UInt32 = 9
+private let ENV_SET_PIXEL_FORMAT: UInt32 = 10
+private let ENV_GET_CAN_DUPE: UInt32 = 3
+private let ENV_GET_VARIABLE: UInt32 = 15
+private let ENV_SET_VARIABLES: UInt32 = 16
+private let ENV_GET_VARIABLE_UPDATE: UInt32 = 17
+private let ENV_GET_SAVE_DIRECTORY: UInt32 = 19
+private let ENV_SET_INPUT_DESCRIPTORS: UInt32 = 11
+private let ENV_SET_CONTROLLER_INFO: UInt32 = 35
+private let PIXEL_RGB565: Int32 = 2
+
+private func updateCString(_ existing: inout UnsafeMutablePointer<CChar>?, _ path: String) -> UnsafePointer<CChar>? {
+    existing?.deallocate()
+    existing = nil
+    let utf = path.utf8CString
+    let p = UnsafeMutablePointer<CChar>.allocate(capacity: utf.count)
+    for (i, c) in utf.enumerated() { p[i] = c }
+    existing = p
+    return UnsafePointer(p)
+}
 
 private func coreEnvironment(cmd: UInt32, data: UnsafeMutableRawPointer?) -> Bool {
     switch cmd {
-    case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT:
+    case ENV_SET_PIXEL_FORMAT:
         if let data {
-            let fmt = data.assumingMemoryBound(to: Int32.self).pointee
-            g_useRGB565 = (fmt == RETRO_PIXEL_FORMAT_RGB565)
+            g_useRGB565 = data.assumingMemoryBound(to: Int32.self).pointee == PIXEL_RGB565
             return true
         }
         return false
-
-    case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
-        // data is char **
+    case ENV_GET_SYSTEM_DIRECTORY:
         guard let data else { return false }
-        let bridge = CoreEnvBridge.shared
-        // Store path and write pointer
-        bridge.systemCStr = (bridge.systemDir as NSString).utf8String.map { Array(UnsafeBufferPointer(start: $0, count: strlen($0) + 1)) } ?? []
-        // Simpler: use strdup-like static storage
-        let path = bridge.systemDir
-        path.withCString { cstr in
-            // Allocate permanent copy
-            let len = strlen(cstr) + 1
-            let copy = UnsafeMutablePointer<CChar>.allocate(capacity: len)
-            memcpy(copy, cstr, len)
-            data.assumingMemoryBound(to: UnsafePointer<CChar>?.self).pointee = UnsafePointer(copy)
-        }
-        return true
-
-    case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY:
+        let ptr = updateCString(&g_systemDirCStr, g_systemDirPath)
+        data.assumingMemoryBound(to: UnsafePointer<CChar>?.self).pointee = ptr
+        return ptr != nil
+    case ENV_GET_SAVE_DIRECTORY:
         guard let data else { return false }
-        let path = CoreEnvBridge.shared.saveDir
-        path.withCString { cstr in
-            let len = strlen(cstr) + 1
-            let copy = UnsafeMutablePointer<CChar>.allocate(capacity: len)
-            memcpy(copy, cstr, len)
-            data.assumingMemoryBound(to: UnsafePointer<CChar>?.self).pointee = UnsafePointer(copy)
-        }
+        let ptr = updateCString(&g_saveDirCStr, g_saveDirPath)
+        data.assumingMemoryBound(to: UnsafePointer<CChar>?.self).pointee = ptr
+        return ptr != nil
+    case ENV_GET_CAN_DUPE:
+        data?.assumingMemoryBound(to: Bool.self).pointee = true
         return true
-
-    case RETRO_ENVIRONMENT_GET_CAN_DUPE:
-        if let data {
-            data.assumingMemoryBound(to: Bool.self).pointee = true
-            return true
-        }
-        return false
-
-    case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
-        if let data {
-            data.assumingMemoryBound(to: Bool.self).pointee = false
-            return true
-        }
-        return false
-
-    case RETRO_ENVIRONMENT_SET_VARIABLES,
-         RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS,
-         RETRO_ENVIRONMENT_SET_CONTROLLER_INFO,
-         RETRO_ENVIRONMENT_SET_SUPPORT_NO_GAME:
+    case ENV_GET_VARIABLE_UPDATE:
+        data?.assumingMemoryBound(to: Bool.self).pointee = false
         return true
-
-    case RETRO_ENVIRONMENT_GET_VARIABLE:
+    case ENV_SET_VARIABLES, ENV_SET_INPUT_DESCRIPTORS, ENV_SET_CONTROLLER_INFO:
+        return true
+    case ENV_GET_VARIABLE:
         return false
-
-    case RETRO_ENVIRONMENT_GET_INPUT_BITMASKS:
-        if let data {
-            data.assumingMemoryBound(to: Bool.self).pointee = false
-            return true
-        }
-        return false
-
     default:
         return false
     }
@@ -530,11 +449,8 @@ private func coreEnvironment(cmd: UInt32, data: UnsafeMutableRawPointer?) -> Boo
 private func coreVideoRefresh(data: UnsafeRawPointer?, width: UInt32, height: UInt32, pitch: Int) {
     guard let data, width > 0, height > 0 else { return }
     FrameBuffer.shared.update(
-        data: data,
-        width: Int(width),
-        height: Int(height),
-        pitch: pitch,
-        isRGB565: g_useRGB565
+        data: data, width: Int(width), height: Int(height),
+        pitch: pitch, isRGB565: g_useRGB565
     )
 }
 
