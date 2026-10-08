@@ -49,7 +49,6 @@ jobs:
             ONLY_ACTIVE_ARCH=NO \
             | tee build/xcodebuild.log
 
-          # Locate the .app
           APP=$(find build/DerivedData -name "k1emu.app" -type d | head -n 1)
           echo "Found app at: $APP"
           if [ -z "$APP" ]; then
@@ -58,20 +57,36 @@ jobs:
             exit 1
           fi
 
-          # Package IPA
+          # CRITICAL: IPA root must be Payload/AppName.app/
+          rm -rf Payload k1emu.ipa
           mkdir -p Payload
-          cp -R "$APP" Payload/
+          cp -R "$APP" Payload/k1emu.app
 
           # Copy any cores into Frameworks
-          mkdir -p "Payload/k1emu.app/Frameworks"
+          mkdir -p Payload/k1emu.app/Frameworks
           if [ -d Cores ]; then
-            find Cores -name "*.dylib" -exec cp {} "Payload/k1emu.app/Frameworks/" \; || true
+            find Cores -name "*.dylib" -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
           fi
 
-          # Zip as IPA
-          (cd Payload && zip -qr ../k1emu.ipa .)
+          # Verify structure before zip
+          echo "=== App contents ==="
+          ls -la Payload/k1emu.app/
+          file Payload/k1emu.app/k1emu || true
+          plutil -p Payload/k1emu.app/Info.plist | head -30 || true
+
+          # Zip INCLUDING the Payload directory (do NOT cd into it)
+          zip -qr k1emu.ipa Payload
+
           ls -lah k1emu.ipa
-          unzip -l k1emu.ipa | head -40
+          echo "=== IPA structure ==="
+          unzip -l k1emu.ipa | head -50
+
+          # Sanity check
+          if ! unzip -l k1emu.ipa | grep -q "Payload/k1emu.app/"; then
+            echo "ERROR: IPA is missing Payload/k1emu.app/"
+            exit 1
+          fi
+          echo "IPA structure OK"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -83,11 +98,11 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.9.0
-          name: k1emu v1.9.0
+          tag_name: v1.9.1
+          name: k1emu v1.9.1
           body: |
-            Real Xcode-built IPA (unsigned).
-            Install with AltStore / SideStore / TrollStore / KSign.
+            Real Xcode-built IPA with correct Payload/ structure.
+            Install with LiveContainer / AltStore / SideStore / TrollStore / KSign.
             Cores: drop ios-arm64 .dylibs into Cores/ and rebuild.
           files: k1emu.ipa
           make_latest: true
