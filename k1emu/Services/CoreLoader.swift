@@ -31,17 +31,6 @@ final class CoreLoader: ObservableObject {
     private var runTimer: Timer?
     private var romDataHolder: Data?
 
-    private let coreNames: [String: [String]] = [
-        "NDS":  ["melondsds_libretro", "libnds", "melonds", "melondsds", "nds_libretro"],
-        "GBA":  ["mgba_libretro", "gba_libretro", "mgba"],
-        "GB":   ["gambatte_libretro", "sameboy_libretro", "gb_libretro"],
-        "GBC":  ["gambatte_libretro", "sameboy_libretro", "gbc_libretro"],
-        "NES":  ["fceumm_libretro", "nestopia_libretro", "nes_libretro"],
-        "SNES": ["snes9x_libretro", "snes_libretro"],
-        "N64":  ["mupen64plus_next_libretro", "parallel_n64_libretro"],
-        "CHIP8": []
-    ]
-
     var systemDirectory: URL {
         let u = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("system", isDirectory: true)
@@ -96,7 +85,6 @@ final class CoreLoader: ObservableObject {
         }
         _ = systemDirectory
         _ = saveDirectory
-        // Publish paths for C env callback
         g_systemDirPath = systemDirectory.path
         g_saveDirPath = saveDirectory.path
     }
@@ -134,6 +122,14 @@ final class CoreLoader: ObservableObject {
         case "nes", "fds", "unf": return "NES"
         case "sfc", "smc": return "SNES"
         case "n64", "z64", "v64": return "N64"
+        case "md", "gen", "smd": return "Genesis"
+        case "sms", "gg": return "SMS"
+        case "cue", "pbp", "chd": return "PS1"
+        case "iso", "cso": return "PSP"
+        case "gdi", "cdi": return "DC"
+        case "vb": return "VB"
+        case "ws", "wsc": return "WS"
+        case "min": return "POKEMINI"
         case "ch8", "c8": return "CHIP8"
         case "zip": return "NDS"
         default: return "Other"
@@ -153,12 +149,12 @@ final class CoreLoader: ObservableObject {
         let key = system.uppercased()
         log("Core for \(key)")
 
-        var candidates = coreNames[key] ?? []
-        if key == "NDS" {
-            candidates = ["melondsds_libretro", "libnds", "melonds", "melondsds", "nds_libretro"]
-        }
+        let candidates = CoreLoader.systemCoreMap[key] ?? []
+        let keywords = CoreLoader.systemScanKeywords[key] ?? [key.lowercased()]
 
         var lastDlError = ""
+
+        // 1) Preferred names
         for dir in searchDirs {
             for base in candidates {
                 let url = dir.appendingPathComponent("\(base).dylib")
@@ -171,21 +167,28 @@ final class CoreLoader: ObservableObject {
                     lastDlError = lastError ?? ""
                 }
             }
-            if let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
-                for f in files where f.pathExtension == "dylib" {
-                    let lower = f.lastPathComponent.lowercased()
-                    if key == "NDS" && (lower.contains("melon") || lower.contains("nds")) {
-                        if open(path: f.path, name: displayName(f.lastPathComponent)) {
-                            return true
-                        }
-                        lastDlError = lastError ?? ""
+        }
+
+        // 2) Fuzzy scan Frameworks / Documents/Cores
+        for dir in searchDirs {
+            guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
+            for f in files where f.pathExtension == "dylib" {
+                let lower = f.lastPathComponent.lowercased()
+                if keywords.contains(where: { lower.contains($0) }) {
+                    triedPaths.append(f.path)
+                    if open(path: f.path, name: displayName(f.lastPathComponent)) {
+                        log("OK scan \(f.lastPathComponent)")
+                        return true
                     }
+                    lastDlError = lastError ?? ""
                 }
             }
         }
 
         let found = triedPaths.filter { FileManager.default.fileExists(atPath: $0) }
-        lastError = found.isEmpty ? "No dylib for \(system)" : "dlopen: \(lastDlError)"
+        lastError = found.isEmpty
+            ? "No dylib for \(system) — reinstall IPA with cores"
+            : "dlopen: \(lastDlError)"
         return false
     }
 
@@ -262,7 +265,6 @@ final class CoreLoader: ObservableObject {
         return true
     }
 
-    /// melonDS: LoadROM((u8*)info->data, info->size, ...) — MUST pass bytes
     func loadGame(path: String) -> Bool {
         guard isLibretro, let loadSym = sym_load_game else {
             lastError = "No retro_load_game"
@@ -280,28 +282,21 @@ final class CoreLoader: ObservableObject {
         romDataHolder = data
         log("ROM \(data.count) bytes")
 
-        // Pack C struct as raw bytes: path*, data*, size, meta*
         let ok = data.withUnsafeBytes { romBuf -> Bool in
             guard let dataPtr = romBuf.baseAddress else { return false }
             return path.withCString { cPath -> Bool in
-                let ptrSize = MemoryLayout<UnsafeRawPointer?>.size  // 8
-                let intSize = MemoryLayout<Int>.size               // 8
+                let ptrSize = MemoryLayout<UnsafeRawPointer?>.size
+                let intSize = MemoryLayout<Int>.size
                 var buf = [UInt8](repeating: 0, count: ptrSize * 3 + intSize)
-
-                // offset 0: path
                 withUnsafeBytes(of: Optional(cPath)) { src in
                     for i in 0..<min(src.count, ptrSize) { buf[i] = src[i] }
                 }
-                // offset 8: data
                 withUnsafeBytes(of: Optional(dataPtr)) { src in
                     for i in 0..<min(src.count, ptrSize) { buf[ptrSize + i] = src[i] }
                 }
-                // offset 16: size
                 withUnsafeBytes(of: data.count) { src in
                     for i in 0..<min(src.count, intSize) { buf[ptrSize * 2 + i] = src[i] }
                 }
-                // offset 24: meta = nil
-
                 typealias LoadFn = @convention(c) (UnsafeRawPointer?) -> Bool
                 let fn = unsafeBitCast(loadSym, to: LoadFn.self)
                 return buf.withUnsafeBytes { raw in fn(raw.baseAddress) }
@@ -309,7 +304,7 @@ final class CoreLoader: ObservableObject {
         }
 
         if !ok {
-            lastError = "retro_load_game failed — put bios7.bin + bios9.bin in Files→k1emu→system"
+            lastError = "retro_load_game failed — BIOS in Files→k1emu→system?"
             romDataHolder = nil
             return false
         }
@@ -384,7 +379,7 @@ final class CoreLoader: ObservableObject {
     deinit { if let h = handle { dlclose(h) } }
 }
 
-// MARK: - Global env paths + C callbacks
+// MARK: - C env / video
 
 private var g_systemDirPath = ""
 private var g_saveDirPath = ""
