@@ -1,30 +1,21 @@
 import SwiftUI
 
-/// Sketch layout: left sidebar (iOS 26 style) + main content area
+/// Horizontal liquid-glass bottom bar + main content (no vertical sidebar).
 struct SidebarShellView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var settings: SettingsStore
     @EnvironmentObject var romLibrary: ROMLibrary
 
-    @State private var sidebarOpen = true
-
     var body: some View {
         ZStack {
             AnimatedBackground().ignoresSafeArea()
 
-            HStack(spacing: 0) {
-                // SIDEBAR
-                if sidebarOpen {
-                    sidebar
-                        .frame(width: 72)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                }
-
+            VStack(spacing: 0) {
                 // MAIN CONTENT
                 Group {
                     switch appState.selectedTab {
                     case .emu:
-                        EmuLibraryView(onToggleSidebar: { withAnimation(.spring(response: 0.3)) { sidebarOpen.toggle() } })
+                        EmuLibraryView()
                     case .tweak:
                         TweakLoaderView()
                     case .settings:
@@ -32,75 +23,83 @@ struct SidebarShellView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // HORIZONTAL liquid-glass bar
+                horizontalBar
             }
+        }
+        .onAppear {
+            romLibrary.scanDocumentsForROMs()
         }
     }
 
-    private var sidebar: some View {
-        VStack(spacing: 8) {
-            // Logo at top
-            K1Logo(size: 40)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-
-            sidebarBtn(.emu, icon: "gamecontroller.fill", label: "Emu")
-            sidebarBtn(.tweak, icon: "slider.horizontal.3", label: "Tweak")
-            sidebarBtn(.settings, icon: "gearshape.fill", label: "Settings")
-
-            Spacer()
-
-            // Collapse
-            Button {
-                withAnimation(.spring(response: 0.3)) { sidebarOpen = false }
-            } label: {
-                Image(systemName: "sidebar.left")
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
-            }
-            .padding(.bottom, 16)
+    private var horizontalBar: some View {
+        HStack(spacing: 0) {
+            barBtn(.emu, icon: "gamecontroller.fill", label: "Emu")
+            barBtn(.tweak, icon: "slider.horizontal.3", label: "Tweak")
+            barBtn(.settings, icon: "gearshape.fill", label: "Settings")
         }
-        .frame(maxHeight: .infinity)
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 14)
         .background(
-            RoundedRectangle(cornerRadius: 0)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
                 .fill(.ultraThinMaterial)
                 .overlay(
-                    Rectangle()
-                        .fill(
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .stroke(
                             LinearGradient(
-                                colors: [.white.opacity(0.12), .clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                                colors: [.white.opacity(0.45), .white.opacity(0.08)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
                         )
-                        .allowsHitTesting(false)
                 )
+                .shadow(color: .black.opacity(0.12), radius: 16, y: 4)
         )
-        .overlay(alignment: .trailing) {
-            Rectangle()
-                .fill(.white.opacity(0.08))
-                .frame(width: 1)
-        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
     }
 
-    private func sidebarBtn(_ tab: AppState.Tab, icon: String, label: String) -> some View {
+    private func barBtn(_ tab: AppState.Tab, icon: String, label: String) -> some View {
         Button {
-            appState.selectedTab = tab
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                appState.selectedTab = tab
+            }
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 20))
-                    .frame(width: 48, height: 48)
+                    .font(.system(size: 20, weight: .semibold))
+                    .frame(width: 48, height: 36)
                     .background(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        Capsule()
                             .fill(appState.selectedTab == tab ? settings.accentColor.opacity(0.35) : .clear)
                     )
                     .foregroundStyle(appState.selectedTab == tab ? settings.accentColor : .secondary)
                 Text(label)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(appState.selectedTab == tab ? settings.accentColor : .secondary)
             }
+            .frame(maxWidth: .infinity)
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Soft animated background under glass chrome
+struct AnimatedBackground: View {
+    @EnvironmentObject var settings: SettingsStore
+
+    var body: some View {
+        LinearGradient(
+            colors: [
+                settings.backgroundColor,
+                settings.backgroundColor.opacity(0.85),
+                settings.accentColor.opacity(0.12)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 }

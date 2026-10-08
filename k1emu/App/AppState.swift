@@ -34,12 +34,12 @@ final class AppState: ObservableObject {
         usingBuiltinCore = false
         Chip8Core.shared.stop()
 
+        let path = game.fileURL.path
+        let exists = FileManager.default.fileExists(atPath: path)
         let ext = (game.fileName as NSString).pathExtension.lowercased()
         let isChip8 = game.system.uppercased() == "CHIP8" || ext == "ch8" || ext == "c8"
 
-        // Prefer built-in CHIP-8 for real pixels when applicable
-        if isChip8, let path = game.fileURL?.path,
-           FileManager.default.fileExists(atPath: path) {
+        if isChip8 && exists {
             if Chip8Core.shared.loadROM(path: path) {
                 usingBuiltinCore = true
                 coreStatus = "CHIP-8 (built-in)"
@@ -48,25 +48,21 @@ final class AppState: ObservableObject {
             }
         }
 
-        // External dylib cores
         let ok = CoreLoader.shared.loadCore(for: game.system)
         if ok, let name = CoreLoader.shared.loadedCoreName {
             coreStatus = name
-            if let path = game.fileURL?.path,
-               FileManager.default.fileExists(atPath: path) {
+            if exists {
                 if CoreLoader.shared.loadGame(path: path) {
-                    romLoadStatus = "ROM loaded — needs video callback from core"
+                    romLoadStatus = "ROM loaded"
                 } else {
                     romLoadStatus = CoreLoader.shared.lastError ?? "ROM load failed"
                 }
             } else {
-                romLoadStatus = "ROM file missing on disk"
+                romLoadStatus = "ROM file missing: \(game.fileName)"
             }
         } else {
             coreStatus = CoreLoader.shared.lastError ?? "No core"
-            // Fallback: if file looks like CHIP-8 size, try builtin anyway
-            if let path = game.fileURL?.path,
-               let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+            if exists, let data = try? Data(contentsOf: game.fileURL),
                data.count > 0 && data.count < 3584 {
                 if Chip8Core.shared.loadROM(path: path) {
                     usingBuiltinCore = true
@@ -75,7 +71,11 @@ final class AppState: ObservableObject {
                     return
                 }
             }
-            romLoadStatus = "No core for \(game.system). Use CHIP-8 (.ch8) for built-in pixels, or drop ios-arm64 dylib in Cores/"
+            if !exists {
+                romLoadStatus = "ROM missing on disk"
+            } else {
+                romLoadStatus = "No core for \(game.system). CHIP-8 works built-in; others need .dylib"
+            }
         }
     }
 

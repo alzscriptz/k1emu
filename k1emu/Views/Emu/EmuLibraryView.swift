@@ -15,12 +15,6 @@ struct EmuLibraryView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Button { onToggleSidebar?() } label: {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                }
-
                 Button { appState.showFAQ = true } label: {
                     Image(systemName: "questionmark.circle.fill")
                         .font(.title3)
@@ -31,11 +25,18 @@ struct EmuLibraryView: View {
 
                 HStack(spacing: 8) {
                     K1Logo(size: 28)
-                    Text("k1emu")
-                        .font(.headline.bold())
+                    Text("k1emu").font(.headline.bold())
                 }
 
                 Spacer()
+
+                Button {
+                    romLibrary.scanDocumentsForROMs()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
 
                 Button { appState.showInstallSheet = true } label: {
                     Image(systemName: "plus.circle.fill")
@@ -75,7 +76,7 @@ struct EmuLibraryView: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 40)
+                    .padding(.bottom, 100)
                 }
             }
         }
@@ -84,9 +85,8 @@ struct EmuLibraryView: View {
     private var emptyState: some View {
         VStack(spacing: 20) {
             K1Logo(size: 80)
-            Text("No games yet")
-                .font(.title2.bold())
-            Text("Tap + to add a ROM\nSupports .zip, .nds, .gba, .nes, .sfc, .n64, .iso…")
+            Text("No games yet").font(.title2.bold())
+            Text("Tap + to add a ROM, or drop files into\nFiles → On My iPhone → k1emu")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -99,7 +99,6 @@ struct EmuLibraryView: View {
                     .padding(.vertical, 14)
                     .background(Capsule().fill(settings.accentColor))
                     .foregroundStyle(.white)
-                    .shadow(color: settings.accentColor.opacity(0.4), radius: 12, y: 4)
             }
         }
     }
@@ -129,16 +128,8 @@ struct GameCard: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .stroke(
-                                LinearGradient(
-                                    colors: [.white.opacity(0.25), .clear],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
+                            .stroke(LinearGradient(colors: [.white.opacity(0.25), .clear], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
                     )
-                    .liquidGlass(enabled: settings.useLiquidGlass)
 
                 Text(game.displaySystem)
                     .font(.caption2.bold())
@@ -155,7 +146,6 @@ struct GameCard: View {
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(2)
 
-            // Real Run button
             Button(action: onRun) {
                 HStack(spacing: 4) {
                     Image(systemName: "play.fill").font(.caption2)
@@ -172,6 +162,7 @@ struct GameCard: View {
 
     private func systemIcon(for system: String) -> String {
         switch system.uppercased() {
+        case "CHIP8": return "square.grid.3x3.fill"
         case "NES", "FC": return "rectangle.grid.2x2"
         case "SNES", "SFC": return "square.grid.3x3"
         case "N64": return "cube"
