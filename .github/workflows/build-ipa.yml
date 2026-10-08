@@ -57,31 +57,25 @@ jobs:
             exit 1
           fi
 
-          # CRITICAL: IPA root must be Payload/AppName.app/
           rm -rf Payload k1emu.ipa
           mkdir -p Payload
           cp -R "$APP" Payload/k1emu.app
 
-          # Copy any cores into Frameworks
           mkdir -p Payload/k1emu.app/Frameworks
           if [ -d Cores ]; then
             find Cores -name "*.dylib" -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
           fi
 
-          # Verify structure before zip
           echo "=== App contents ==="
           ls -la Payload/k1emu.app/
           file Payload/k1emu.app/k1emu || true
-          plutil -p Payload/k1emu.app/Info.plist | head -30 || true
 
-          # Zip INCLUDING the Payload directory (do NOT cd into it)
           zip -qr k1emu.ipa Payload
 
           ls -lah k1emu.ipa
           echo "=== IPA structure ==="
           unzip -l k1emu.ipa | head -50
 
-          # Sanity check
           if ! unzip -l k1emu.ipa | grep -q "Payload/k1emu.app/"; then
             echo "ERROR: IPA is missing Payload/k1emu.app/"
             exit 1
@@ -98,12 +92,18 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.9.1
-          name: k1emu v1.9.1
+          tag_name: v2.0.0
+          name: k1emu v2.0.0
           body: |
-            Real Xcode-built IPA with correct Payload/ structure.
-            Install with LiveContainer / AltStore / SideStore / TrollStore / KSign.
-            Cores: drop ios-arm64 .dylibs into Cores/ and rebuild.
+            ## Fixes
+            - **Add ROM actually works**: UIDocumentPicker with asCopy + NSFileCoordinator
+            - Relative path storage (survives relaunch)
+            - Documents scan (Files → On My iPhone → k1emu)
+            - Built-in IBM Logo CHIP-8 demo so library is never empty
+            - Horizontal liquid-glass bottom bar
+            - Real CHIP-8 pixels on Run
+
+            Install with LiveContainer / AltStore / SideStore / TrollStore.
           files: k1emu.ipa
           make_latest: true
           fail_on_unmatched_files: false
