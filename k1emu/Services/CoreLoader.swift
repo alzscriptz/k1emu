@@ -1,65 +1,9 @@
 import Foundation
 import Darwin
 
-// MARK: - Minimal libretro ABI (so real cores can be dlopened)
-
-typealias retro_init_t              = @convention(c) () -> Void
-typealias retro_deinit_t            = @convention(c) () -> Void
-typealias retro_api_version_t       = @convention(c) () -> Int32
-typealias retro_get_system_info_t   = @convention(c) (UnsafeMutablePointer<retro_system_info>?) -> Void
-typealias retro_get_system_av_info_t = @convention(c) (UnsafeMutablePointer<retro_system_av_info>?) -> Void
-typealias retro_set_environment_t   = @convention(c) (@escaping retro_environment_t) -> Void
-typealias retro_set_video_refresh_t = @convention(c) (@escaping retro_video_refresh_t) -> Void
-typealias retro_set_audio_sample_t  = @convention(c) (@escaping retro_audio_sample_t) -> Void
-typealias retro_set_audio_sample_batch_t = @convention(c) (@escaping retro_audio_sample_batch_t) -> Void
-typealias retro_set_input_poll_t    = @convention(c) (@escaping retro_input_poll_t) -> Void
-typealias retro_set_input_state_t   = @convention(c) (@escaping retro_input_state_t) -> Void
-typealias retro_load_game_t         = @convention(c) (UnsafePointer<retro_game_info>?) -> Bool
-typealias retro_unload_game_t       = @convention(c) () -> Void
-typealias retro_run_t               = @convention(c) () -> Void
-typealias retro_reset_t             = @convention(c) () -> Void
-
-typealias retro_environment_t      = @convention(c) (UInt32, UnsafeMutableRawPointer?) -> Bool
-typealias retro_video_refresh_t     = @convention(c) (UnsafeRawPointer?, UInt32, UInt32, Int) -> Void
-typealias retro_audio_sample_t      = @convention(c) (Int16, Int16) -> Void
-typealias retro_audio_sample_batch_t = @convention(c) (UnsafePointer<Int16>?, Int) -> Int
-typealias retro_input_poll_t        = @convention(c) () -> Void
-typealias retro_input_state_t       = @convention(c) (UInt32, UInt32, UInt32, UInt32) -> Int16
-
-struct retro_system_info {
-    var library_name: UnsafePointer<CChar>?
-    var library_version: UnsafePointer<CChar>?
-    var valid_extensions: UnsafePointer<CChar>?
-    var need_fullpath: Bool
-    var block_extract: Bool
-}
-
-struct retro_game_info {
-    var path: UnsafePointer<CChar>?
-    var data: UnsafeRawPointer?
-    var size: Int
-    var meta: UnsafePointer<CChar>?
-}
-
-struct retro_game_geometry {
-    var base_width: UInt32
-    var base_height: UInt32
-    var max_width: UInt32
-    var max_height: UInt32
-    var aspect_ratio: Float
-}
-
-struct retro_system_timing {
-    var fps: Double
-    var sample_rate: Double
-}
-
-struct retro_system_av_info {
-    var geometry: retro_game_geometry
-    var timing: retro_system_timing
-}
-
-// MARK: - CoreLoader
+// MARK: - CoreLoader (libretro-ready)
+// Uses raw C function pointers so we stay ABI-compatible without
+// putting non-ObjC-representable Swift structs into @convention(c).
 
 @MainActor
 final class CoreLoader: ObservableObject {
@@ -72,21 +16,15 @@ final class CoreLoader: ObservableObject {
 
     private var handle: UnsafeMutableRawPointer?
 
-    // Cached libretro symbols
-    private var fn_init: retro_init_t?
-    private var fn_deinit: retro_deinit_t?
-    private var fn_api_version: retro_api_version_t?
-    private var fn_get_system_info: retro_get_system_info_t?
-    private var fn_load_game: retro_load_game_t?
-    private var fn_unload_game: retro_unload_game_t?
-    private var fn_run: retro_run_t?
-    private var fn_reset: retro_reset_t?
-    private var fn_set_environment: retro_set_environment_t?
-    private var fn_set_video_refresh: retro_set_video_refresh_t?
-    private var fn_set_audio_sample: retro_set_audio_sample_t?
-    private var fn_set_audio_sample_batch: retro_set_audio_sample_batch_t?
-    private var fn_set_input_poll: retro_set_input_poll_t?
-    private var fn_set_input_state: retro_set_input_state_t?
+    // Raw C symbols (looked up via dlsym)
+    private var sym_init: UnsafeMutableRawPointer?
+    private var sym_deinit: UnsafeMutableRawPointer?
+    private var sym_api_version: UnsafeMutableRawPointer?
+    private var sym_get_system_info: UnsafeMutableRawPointer?
+    private var sym_load_game: UnsafeMutableRawPointer?
+    private var sym_unload_game: UnsafeMutableRawPointer?
+    private var sym_run: UnsafeMutableRawPointer?
+    private var sym_reset: UnsafeMutableRawPointer?
 
     private let coreNames: [String: [String]] = [
         "NDS":     ["libnds", "nds_libretro", "desmume", "melonds"],
@@ -117,7 +55,6 @@ final class CoreLoader: ObservableObject {
             dirs.append(exe.appendingPathComponent("Frameworks"))
             dirs.append(exe)
         }
-        // Also look next to the app for sideload convenience
         dirs.append(URL(fileURLWithPath: "/var/mobile/Documents"))
         return dirs
     }
@@ -160,7 +97,6 @@ final class CoreLoader: ObservableObject {
                     }
                 }
             }
-            // Fallback: any dylib that contains the system name
             if let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) {
                 for f in files where f.pathExtension == "dylib" {
                     let lower = f.lastPathComponent.lowercased()
@@ -192,7 +128,7 @@ final class CoreLoader: ObservableObject {
         return false
     }
 
-    // MARK: - Open + bind libretro symbols
+    // MARK: - Open + bind symbols
 
     private func open(path: String, name: String) -> Bool {
         guard let h = dlopen(path, RTLD_NOW) else {
@@ -206,42 +142,42 @@ final class CoreLoader: ObservableObject {
         handle = h
         loadedCoreName = name
 
-        // Try to bind standard libretro entry points
-        fn_api_version          = symbol("retro_api_version")
-        fn_init                 = symbol("retro_init")
-        fn_deinit               = symbol("retro_deinit")
-        fn_get_system_info      = symbol("retro_get_system_info")
-        fn_load_game            = symbol("retro_load_game")
-        fn_unload_game          = symbol("retro_unload_game")
-        fn_run                  = symbol("retro_run")
-        fn_reset                = symbol("retro_reset")
-        fn_set_environment      = symbol("retro_set_environment")
-        fn_set_video_refresh    = symbol("retro_set_video_refresh")
-        fn_set_audio_sample     = symbol("retro_set_audio_sample")
-        fn_set_audio_sample_batch = symbol("retro_set_audio_sample_batch")
-        fn_set_input_poll       = symbol("retro_set_input_poll")
-        fn_set_input_state      = symbol("retro_set_input_state")
+        // Look up standard libretro entry points as raw pointers
+        sym_api_version     = dlsym(h, "retro_api_version")
+        sym_init            = dlsym(h, "retro_init")
+        sym_deinit          = dlsym(h, "retro_deinit")
+        sym_get_system_info = dlsym(h, "retro_get_system_info")
+        sym_load_game       = dlsym(h, "retro_load_game")
+        sym_unload_game     = dlsym(h, "retro_unload_game")
+        sym_run             = dlsym(h, "retro_run")
+        sym_reset           = dlsym(h, "retro_reset")
 
-        if fn_api_version != nil && fn_init != nil {
+        if sym_api_version != nil && sym_init != nil {
             isLibretro = true
-            let ver = fn_api_version?() ?? 0
+
+            // Call retro_api_version() -> Int32
+            typealias ApiVersionFn = @convention(c) () -> Int32
+            let apiFn = unsafeBitCast(sym_api_version, to: ApiVersionFn.self)
+            let ver = apiFn()
             coreVersion = "libretro API \(ver)"
 
-            // Wire minimal environment + callbacks so the core can init
-            fn_set_environment?({ cmd, data in
-                // Minimal stub – real implementation later
-                return false
-            })
-            fn_set_video_refresh?({ _, _, _, _ in })
-            fn_set_audio_sample?({ _, _ in })
-            fn_set_audio_sample_batch?({ _, frames in frames })
-            fn_set_input_poll?({ })
-            fn_set_input_state?({ _, _, _, _ in 0 })
+            // Call retro_init()
+            typealias InitFn = @convention(c) () -> Void
+            let initFn = unsafeBitCast(sym_init, to: InitFn.self)
+            initFn()
 
-            fn_init?()
-
-            if var info = Optional(retro_system_info(library_name: nil, library_version: nil, valid_extensions: nil, need_fullpath: false, block_extract: false)) {
-                fn_get_system_info?(&info)
+            // Best-effort: try to read library name via retro_get_system_info
+            // (layout is stable enough for name/version strings)
+            if let infoSym = sym_get_system_info {
+                // We only need the first two char* fields
+                struct MinimalInfo {
+                    var library_name: UnsafePointer<CChar>?
+                    var library_version: UnsafePointer<CChar>?
+                }
+                typealias GetInfoFn = @convention(c) (UnsafeMutablePointer<MinimalInfo>?) -> Void
+                let getInfo = unsafeBitCast(infoSym, to: GetInfoFn.self)
+                var info = MinimalInfo(library_name: nil, library_version: nil)
+                getInfo(&info)
                 if let lib = info.library_name {
                     loadedCoreName = String(cString: lib)
                 }
@@ -250,7 +186,6 @@ final class CoreLoader: ObservableObject {
                 }
             }
         } else {
-            // Not a libretro core – still loaded, custom ABI later
             isLibretro = false
             coreVersion = "custom / unknown ABI"
         }
@@ -262,32 +197,54 @@ final class CoreLoader: ObservableObject {
     // MARK: - Public core control
 
     func loadGame(path: String) -> Bool {
-        guard isLibretro, let load = fn_load_game else {
+        guard isLibretro, let loadSym = sym_load_game else {
             lastError = "Core does not support retro_load_game"
             return false
         }
+        // Minimal retro_game_info: path, data, size, meta
+        struct GameInfo {
+            var path: UnsafePointer<CChar>?
+            var data: UnsafeRawPointer?
+            var size: Int
+            var meta: UnsafePointer<CChar>?
+        }
+        typealias LoadGameFn = @convention(c) (UnsafePointer<GameInfo>?) -> Bool
+        let loadFn = unsafeBitCast(loadSym, to: LoadGameFn.self)
         return path.withCString { cPath in
-            var info = retro_game_info(path: cPath, data: nil, size: 0, meta: nil)
-            return load(&info)
+            var info = GameInfo(path: cPath, data: nil, size: 0, meta: nil)
+            return loadFn(&info)
         }
     }
 
     func runFrame() {
-        fn_run?()
+        guard let runSym = sym_run else { return }
+        typealias RunFn = @convention(c) () -> Void
+        let runFn = unsafeBitCast(runSym, to: RunFn.self)
+        runFn()
     }
 
     func reset() {
-        fn_reset?()
+        guard let resetSym = sym_reset else { return }
+        typealias ResetFn = @convention(c) () -> Void
+        let resetFn = unsafeBitCast(resetSym, to: ResetFn.self)
+        resetFn()
     }
 
     func unloadGame() {
-        fn_unload_game?()
+        guard let unloadSym = sym_unload_game else { return }
+        typealias UnloadFn = @convention(c) () -> Void
+        let unloadFn = unsafeBitCast(unloadSym, to: UnloadFn.self)
+        unloadFn()
     }
 
     func unload() {
         if isLibretro {
-            fn_unload_game?()
-            fn_deinit?()
+            unloadGame()
+            if let deinitSym = sym_deinit {
+                typealias DeinitFn = @convention(c) () -> Void
+                let deinitFn = unsafeBitCast(deinitSym, to: DeinitFn.self)
+                deinitFn()
+            }
         }
         if let h = handle {
             dlclose(h)
@@ -296,20 +253,14 @@ final class CoreLoader: ObservableObject {
         loadedCoreName = nil
         isLibretro = false
         coreVersion = nil
-        fn_init = nil
-        fn_deinit = nil
-        fn_api_version = nil
-        fn_get_system_info = nil
-        fn_load_game = nil
-        fn_unload_game = nil
-        fn_run = nil
-        fn_reset = nil
-        fn_set_environment = nil
-        fn_set_video_refresh = nil
-        fn_set_audio_sample = nil
-        fn_set_audio_sample_batch = nil
-        fn_set_input_poll = nil
-        fn_set_input_state = nil
+        sym_init = nil
+        sym_deinit = nil
+        sym_api_version = nil
+        sym_get_system_info = nil
+        sym_load_game = nil
+        sym_unload_game = nil
+        sym_run = nil
+        sym_reset = nil
     }
 
     private func displayName(_ raw: String) -> String {
@@ -321,14 +272,7 @@ final class CoreLoader: ObservableObject {
         return s
     }
 
-    func symbol<T>(_ name: String) -> T? {
-        guard let h = handle else { return nil }
-        guard let sym = dlsym(h, name) else { return nil }
-        return unsafeBitCast(sym, to: T.self)
-    }
-
     deinit {
-        // Note: unload() is @MainActor; just close the handle here
         if let h = handle { dlclose(h) }
     }
 }

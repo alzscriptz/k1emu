@@ -64,13 +64,13 @@ struct BrowserModeView: View {
                 HStack(spacing: 18) {
                     Button { /* goBack via coordinator later */ } label: {
                         Image(systemName: "chevron.left")
-                            .foregroundStyle(canGoBack ? .primary : .secondary.opacity(0.4))
+                            .foregroundStyle(canGoBack ? Color.primary : Color.secondary.opacity(0.4))
                     }
                     .disabled(!canGoBack)
 
                     Button { /* goForward */ } label: {
                         Image(systemName: "chevron.right")
-                            .foregroundStyle(canGoForward ? .primary : .secondary.opacity(0.4))
+                            .foregroundStyle(canGoForward ? Color.primary : Color.secondary.opacity(0.4))
                     }
                     .disabled(!canGoForward)
 
@@ -176,7 +176,6 @@ struct WebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
-        // Basic privacy-oriented config
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
 
         let web = WKWebView(frame: .zero, configuration: config)
