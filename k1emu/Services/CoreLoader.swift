@@ -28,7 +28,6 @@ final class CoreLoader: ObservableObject {
     private var sym_set_audio_batch: UnsafeMutableRawPointer?
     private var sym_set_env: UnsafeMutableRawPointer?
     private var runTimer: Timer?
-    private var pixelFormatRGB565 = false
 
     private let coreNames: [String: [String]] = [
         "NDS": ["melondsds_libretro", "libnds", "melonds", "melondsds", "nds_libretro", "desmume"],
@@ -74,6 +73,18 @@ final class CoreLoader: ObservableObject {
         }
     }
 
+    func listAvailableCores() -> [String] {
+        prepareBundledCores()
+        var names: [String] = []
+        for dir in searchDirs {
+            guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
+            for f in files where f.pathExtension == "dylib" {
+                names.append(f.lastPathComponent)
+            }
+        }
+        return Array(Set(names)).sorted()
+    }
+
     private var searchDirs: [URL] {
         var dirs = [documentsCores]
         if let exe = Bundle.main.executableURL?.deletingLastPathComponent() {
@@ -87,7 +98,6 @@ final class CoreLoader: ObservableObject {
         return dirs
     }
 
-    /// Auto-pick system from filename extension
     static func detectSystem(fileName: String) -> String {
         let ext = (fileName as NSString).pathExtension.lowercased()
         switch ext {
@@ -100,7 +110,7 @@ final class CoreLoader: ObservableObject {
         case "ch8", "c8": return "CHIP8"
         case "n64", "z64", "v64": return "N64"
         case "md", "gen", "smd": return "Genesis"
-        case "zip": return "NDS" // common packed DS ROM — user can override
+        case "zip": return "NDS"
         default: return "Other"
         }
     }
@@ -145,9 +155,7 @@ final class CoreLoader: ObservableObject {
         }
 
         let found = triedPaths.filter { FileManager.default.fileExists(atPath: $0) }
-        lastError = found.isEmpty
-            ? "No dylib for \(system)"
-            : "dlopen failed: \(lastDlError)"
+        lastError = found.isEmpty ? "No dylib for \(system)" : "dlopen failed: \(lastDlError)"
         return false
     }
 
@@ -189,44 +197,35 @@ final class CoreLoader: ObservableObject {
 
         isLibretro = true
 
-        // Environment (pixel format etc.)
         if let envSym = sym_set_env {
             typealias EnvFn = @convention(c) (@escaping @convention(c) (UInt32, UnsafeMutableRawPointer?) -> Bool) -> Void
             unsafeBitCast(envSym, to: EnvFn.self)(coreEnvironment)
         }
-
-        // Video → FrameBuffer
         if let vSym = sym_set_video {
             typealias SetVideo = @convention(c) (@escaping @convention(c) (UnsafeRawPointer?, UInt32, UInt32, Int) -> Void) -> Void
             unsafeBitCast(vSym, to: SetVideo.self)(coreVideoRefresh)
         }
-
-        // Input stubs
         if let pSym = sym_set_input_poll {
             typealias SetPoll = @convention(c) (@escaping @convention(c) () -> Void) -> Void
-            unsafeBitCast(pSym, to: SetPoll.self)({})
+            unsafeBitCast(pSym, to: SetPoll.self)(coreInputPoll)
         }
         if let sSym = sym_set_input_state {
             typealias SetState = @convention(c) (@escaping @convention(c) (UInt32, UInt32, UInt32, UInt32) -> Int16) -> Void
-            unsafeBitCast(sSym, to: SetState.self)({ _, _, _, _ in 0 })
+            unsafeBitCast(sSym, to: SetState.self)(coreInputState)
         }
-
-        // Audio stubs
         if let aSym = sym_set_audio {
             typealias SetAudio = @convention(c) (@escaping @convention(c) (Int16, Int16) -> Void) -> Void
-            unsafeBitCast(aSym, to: SetAudio.self)({ _, _ in })
+            unsafeBitCast(aSym, to: SetAudio.self)(coreAudioSample)
         }
         if let bSym = sym_set_audio_batch {
             typealias SetBatch = @convention(c) (@escaping @convention(c) (UnsafePointer<Int16>?, Int) -> Int) -> Void
-            unsafeBitCast(bSym, to: SetBatch.self)({ _, frames in frames })
+            unsafeBitCast(bSym, to: SetBatch.self)(coreAudioBatch)
         }
 
         typealias ApiVersionFn = @convention(c) () -> Int32
         coreVersion = "libretro API \(unsafeBitCast(sym_api_version!, to: ApiVersionFn.self)())"
-
         typealias InitFn = @convention(c) () -> Void
         unsafeBitCast(sym_init!, to: InitFn.self)()
-
         lastError = nil
         return true
     }
@@ -259,11 +258,8 @@ final class CoreLoader: ObservableObject {
     private func startRunLoop() {
         stopRunLoop()
         isRunning = true
-        // ~60 FPS
         runTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.runFrame()
-            }
+            Task { @MainActor in self?.runFrame() }
         }
     }
 
@@ -321,13 +317,10 @@ final class CoreLoader: ObservableObject {
     deinit { if let h = handle { dlclose(h) } }
 }
 
-// MARK: - C callbacks (must be non-capturing / global)
+// MARK: - C callbacks
 
 private let RETRO_ENVIRONMENT_SET_PIXEL_FORMAT: UInt32 = 10
-private let RETRO_PIXEL_FORMAT_0RGB1555: Int32 = 0
-private let RETRO_PIXEL_FORMAT_XRGB8888: Int32 = 1
 private let RETRO_PIXEL_FORMAT_RGB565: Int32 = 2
-
 private var g_useRGB565 = false
 
 private func coreEnvironment(cmd: UInt32, data: UnsafeMutableRawPointer?) -> Bool {
@@ -336,19 +329,18 @@ private func coreEnvironment(cmd: UInt32, data: UnsafeMutableRawPointer?) -> Boo
         g_useRGB565 = (fmt == RETRO_PIXEL_FORMAT_RGB565)
         return true
     }
-    // Accept common env cmds as no-op success so cores keep going
-    let softFail: Set<UInt32> = [1, 2, 3, 5, 6, 9, 11, 15, 16, 17, 18, 19, 20, 21, 22]
-    if softFail.contains(cmd) { return false }
     return false
 }
 
 private func coreVideoRefresh(data: UnsafeRawPointer?, width: UInt32, height: UInt32, pitch: Int) {
     guard data != nil, width > 0, height > 0 else { return }
     FrameBuffer.shared.update(
-        data: data,
-        width: Int(width),
-        height: Int(height),
-        pitch: pitch,
-        isRGB565: g_useRGB565
+        data: data, width: Int(width), height: Int(height),
+        pitch: pitch, isRGB565: g_useRGB565
     )
 }
+
+private func coreInputPoll() {}
+private func coreInputState(_ port: UInt32, _ device: UInt32, _ index: UInt32, _ id: UInt32) -> Int16 { 0 }
+private func coreAudioSample(_ left: Int16, _ right: Int16) {}
+private func coreAudioBatch(_ data: UnsafePointer<Int16>?, _ frames: Int) -> Int { frames }
