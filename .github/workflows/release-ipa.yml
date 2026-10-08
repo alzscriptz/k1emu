@@ -2,38 +2,63 @@ name: Release IPA
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
   contents: write
 
 jobs:
   package:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
+    timeout-minutes: 45
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Make IPA
+      - name: Select Xcode
         run: |
-          mkdir -p Payload/k1emu.app/Frameworks
-          [ -f k1emu/Info.plist ] && cp k1emu/Info.plist Payload/k1emu.app/
-          [ -d k1emu ] && cp -R k1emu Payload/k1emu.app/Sources
-          find Cores -name '*.dylib' -exec cp {} Payload/k1emu.app/Frameworks/ \; 2>/dev/null || true
-          echo '#!/bin/sh' > Payload/k1emu.app/k1emu
-          echo 'echo k1emu' >> Payload/k1emu.app/k1emu
-          chmod +x Payload/k1emu.app/k1emu
-          cd Payload && zip -qr ../k1emu.ipa .
-          ls -lah ../k1emu.ipa
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer || true
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate + Build + Package
+        run: |
+          set -euxo pipefail
+          xcodegen generate
+          mkdir -p build
+
+          xcodebuild \
+            -project k1emu.xcodeproj \
+            -scheme k1emu \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            ONLY_ACTIVE_ARCH=NO
+
+          APP=$(find build/DerivedData -name "k1emu.app" -type d | head -n 1)
+          echo "APP=$APP"
+          test -n "$APP"
+
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          mkdir -p "Payload/k1emu.app/Frameworks"
+          find Cores -name "*.dylib" -exec cp {} "Payload/k1emu.app/Frameworks/" \; 2>/dev/null || true
+
+          (cd Payload && zip -qr ../k1emu.ipa .)
+          ls -lah k1emu.ipa
 
       - name: Upload release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.8.0
-          name: k1emu v1.8.0
+          tag_name: v1.9.0
+          name: k1emu v1.9.0
           body: |
-            Photo-matched controller + sources packaged.
-            Install with KSign / AltStore / SideStore / TrollStore.
+            Real Xcode-built unsigned IPA.
+            Sideload with AltStore / SideStore / TrollStore.
           files: k1emu.ipa
           fail_on_unmatched_files: true
         env:

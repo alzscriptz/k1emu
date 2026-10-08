@@ -10,32 +10,89 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
+    timeout-minutes: 45
+
     steps:
+<｜tool_call_begin｜>
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Package IPA
+      - name: Select Xcode
         run: |
-          set -eux
-          mkdir -p Payload/k1emu.app/Frameworks
-          if [ -f k1emu/Info.plist ]; then cp k1emu/Info.plist Payload/k1emu.app/; fi
-          if [ -d k1emu ]; then cp -R k1emu Payload/k1emu.app/Sources; fi
-          if [ -d Cores ]; then
-            find Cores -name '*.dylib' -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
+          # Prefer newest available
+          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer || true
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: |
+          xcodegen generate
+          ls -la
+          ls -la k1emu.xcodeproj || true
+
+      - name: Build (unsigned, device)
+        run: |
+          set -euxo pipefail
+          mkdir -p build
+
+          xcodebuild \
+            -project k1emu.xcodeproj \
+            -scheme k1emu \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            ONLY_ACTIVE_ARCH=NO \
+            | tee build/xcodebuild.log
+
+          # Locate the .app
+          APP=$(find build/DerivedData -name "k1emu.app" -type d | head -n 1)
+          echo "Found app at: $APP"
+          if [ -z "$APP" ]; then
+            echo "ERROR: k1emu.app not found"
+            find build/DerivedData -type d -name "*.app" || true
+            exit 1
           fi
-          printf '%s\n' '#!/bin/sh' 'echo k1emu' > Payload/k1emu.app/k1emu
-          chmod +x Payload/k1emu.app/k1emu
+
+          # Package IPA
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+
+          # Copy any cores into Frameworks
+          mkdir -p "Payload/k1emu.app/Frameworks"
+          if [ -d Cores ]; then
+            find Cores -name "*.dylib" -exec cp {} "Payload/k1emu.app/Frameworks/" \; || true
+          fi
+
+          # Zip as IPA
           (cd Payload && zip -qr ../k1emu.ipa .)
           ls -lah k1emu.ipa
+          unzip -l k1emu.ipa | head -40
 
-      - name: Create Release
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k1emu-ipa
+          path: k1emu.ipa
+          retention-days: 14
+
+      - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.8.0
-          name: k1emu v1.8.0
-          body: Photo controller layout + sources. Sideload via KSign/AltStore/SideStore.
+          tag_name: v1.9.0
+          name: k1emu v1.9.0
+          body: |
+            Real Xcode-built IPA (unsigned).
+            Install with AltStore / SideStore / TrollStore / KSign.
+            Cores: drop ios-arm64 .dylibs into Cores/ and rebuild.
           files: k1emu.ipa
           make_latest: true
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
