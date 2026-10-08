@@ -21,16 +21,41 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode.app/Contents/Developer || true
           xcodebuild -version
-          xcrun --sdk iphoneos --show-sdk-path
 
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Generate Xcode project
+      - name: Fetch NDS core (melonDS DS iOS arm64)
         run: |
-          xcodegen generate
-          ls -la
-          ls -la k1emu.xcodeproj || true
+          set -euxo pipefail
+          mkdir -p Cores
+          curl -L -o /tmp/melonds-ios.zip \
+            "https://github.com/JesseTG/melonds-ds/releases/download/v1.4.0/melondsds_libretro-ios-Release.zip"
+          unzip -o /tmp/melonds-ios.zip -d /tmp/melonds-ios
+          find /tmp/melonds-ios -type f \( -name "*.dylib" -o -name "*.framework" -o -name "melonds*" \) | head -50
+          # Prefer .dylib; also accept framework binary
+          DY=$(find /tmp/melonds-ios -name "*.dylib" | head -n 1 || true)
+          if [ -n "$DY" ]; then
+            cp "$DY" Cores/melondsds_libretro.dylib
+            # aliases CoreLoader looks for
+            cp "$DY" Cores/libnds.dylib
+            cp "$DY" Cores/melonds.dylib
+            ls -lah Cores/
+            file Cores/melondsds_libretro.dylib
+          else
+            # Sometimes the zip contains a .framework
+            FW=$(find /tmp/melonds-ios -name "*.framework" -type d | head -n 1 || true)
+            if [ -n "$FW" ]; then
+              cp -R "$FW" Cores/
+              ls -la Cores/
+            else
+              echo "WARNING: no dylib found in melonDS zip"
+              find /tmp/melonds-ios -type f | head -40
+            fi
+          fi
+
+      - name: Generate Xcode project
+        run: xcodegen generate
 
       - name: Build (unsigned, device)
         run: |
@@ -51,11 +76,7 @@ jobs:
 
           APP=$(find build/DerivedData -name "k1emu.app" -type d | head -n 1)
           echo "Found app at: $APP"
-          if [ -z "$APP" ]; then
-            echo "ERROR: k1emu.app not found"
-            find build/DerivedData -type d -name "*.app" || true
-            exit 1
-          fi
+          test -n "$APP"
 
           rm -rf Payload k1emu.ipa
           mkdir -p Payload
@@ -64,23 +85,20 @@ jobs:
           mkdir -p Payload/k1emu.app/Frameworks
           if [ -d Cores ]; then
             find Cores -name "*.dylib" -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
+            find Cores -name "*.framework" -type d -exec cp -R {} Payload/k1emu.app/Frameworks/ \; || true
           fi
 
-          echo "=== App contents ==="
-          ls -la Payload/k1emu.app/
-          file Payload/k1emu.app/k1emu || true
+          echo "=== Frameworks ==="
+          ls -lah Payload/k1emu.app/Frameworks/ || true
 
           zip -qr k1emu.ipa Payload
-
           ls -lah k1emu.ipa
-          echo "=== IPA structure ==="
-          unzip -l k1emu.ipa | head -50
+          unzip -l k1emu.ipa | head -60
 
           if ! unzip -l k1emu.ipa | grep -q "Payload/k1emu.app/"; then
-            echo "ERROR: IPA is missing Payload/k1emu.app/"
+            echo "ERROR: missing Payload/"
             exit 1
           fi
-          echo "IPA structure OK"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -92,16 +110,13 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.0.0
-          name: k1emu v2.0.0
+          tag_name: v2.1.0
+          name: k1emu v2.1.0
           body: |
-            ## Fixes
-            - **Add ROM actually works**: UIDocumentPicker with asCopy + NSFileCoordinator
-            - Relative path storage (survives relaunch)
-            - Documents scan (Files → On My iPhone → k1emu)
-            - Built-in IBM Logo CHIP-8 demo so library is never empty
-            - Horizontal liquid-glass bottom bar
-            - Real CHIP-8 pixels on Run
+            ## NDS core + Browser dock
+            - Bundles **melonDS DS** (JesseTG) ios-arm64 libretro core as `melondsds_libretro.dylib`
+            - Browser stays docked at the bottom when open
+            - CHIP-8 built-in still works
 
             Install with LiveContainer / AltStore / SideStore / TrollStore.
           files: k1emu.ipa
