@@ -32,7 +32,6 @@ final class ROMLibrary: ObservableObject {
             games = []
             return
         }
-        // Drop entries whose file is gone
         games = decoded.filter { game in
             guard let url = game.fileURL else { return false }
             return fileManager.fileExists(atPath: url.path)
@@ -55,18 +54,15 @@ final class ROMLibrary: ObservableObject {
             let safeName = sanitizeFileName(fileName)
             let dest = romsDirectory.appendingPathComponent(safeName)
 
-            // Security-scoped access for Files app / iCloud picks
             let accessed = source.startAccessingSecurityScopedResource()
             defer { if accessed { source.stopAccessingSecurityScopedResource() } }
 
             try? fileManager.removeItem(at: dest)
 
             do {
-                // Prefer coordinated copy for iCloud / Files
                 try fileManager.copyItem(at: source, to: dest)
                 destURL = dest
             } catch {
-                // Fallback: read bytes then write (works for many providers)
                 do {
                     let data = try Data(contentsOf: source)
                     try data.write(to: dest, options: .atomic)
@@ -103,8 +99,16 @@ final class ROMLibrary: ObservableObject {
         let dest = romsDirectory.appendingPathComponent(fileName)
         try data.write(to: dest, options: .atomic)
         let finalName = (name?.isEmpty == false) ? name! : (fileName as NSString).deletingPathExtension
-        return addGame(name: finalName, system: system, fileName: fileName, sourceURL: nil)
-            .withFileURL(dest)
+
+        let game = GameItem(
+            name: finalName,
+            system: system,
+            fileName: fileName,
+            fileURL: dest
+        )
+        games.insert(game, at: 0)
+        save()
+        return game
     }
 
     func markPlayed(_ game: GameItem) {
@@ -132,13 +136,5 @@ final class ROMLibrary: ObservableObject {
     private func sanitizeFileName(_ name: String) -> String {
         let invalid = CharacterSet(charactersIn: "/:\\?%*|\"<>")
         return name.components(separatedBy: invalid).joined(separator: "_")
-    }
-}
-
-private extension GameItem {
-    func withFileURL(_ url: URL) -> GameItem {
-        var g = self
-        g.fileURL = url
-        return g
     }
 }
