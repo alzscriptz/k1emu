@@ -10,36 +10,61 @@ struct RootView: View {
 
             if appState.isPlaying, let game = appState.currentGame {
                 if appState.isTVModeActive {
-                    // TV mode: phone is full controller only
-                    ControllerView(game: game, showGamePanel: false)
+                    // TV SHARE: ONLY the game — no controller, no chrome
+                    TVGameOnlyView(game: game)
                 } else {
-                    // ON PHONE MODE (sketch): game panel + controller on same screen
                     ControllerView(game: game, showGamePanel: true)
                 }
             } else {
-                // Main shell: SIDEBAR + content (matches sketch)
                 SidebarShellView()
             }
 
-            if appState.showInGameMenu {
+            if appState.showInGameMenu && !appState.isTVModeActive {
                 InGameMenuView()
                     .transition(.opacity.combined(with: .scale))
                     .zIndex(100)
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: appState.isPlaying)
-        .animation(.spring(response: 0.3), value: appState.showInGameMenu)
-        .sheet(isPresented: $appState.showInstallSheet) {
-            InstallROMSheet()
+        .animation(.spring(response: 0.3), value: appState.isTVModeActive)
+        .sheet(isPresented: $appState.showInstallSheet) { InstallROMSheet() }
+        .sheet(isPresented: $appState.showFAQ) { FAQView() }
+        .sheet(item: $appState.showGameInfo) { GameInfoSheet(game: $0) }
+        .sheet(item: $appState.showTweakPickerFor) { TweakPickerSheet(game: $0) }
+    }
+}
+
+/// Full-screen pure game surface for AirPlay / TV share.
+struct TVGameOnlyView: View {
+    let game: GameItem
+    @EnvironmentObject var appState: AppState
+    @ObservedObject private var fb = FrameBuffer.shared
+    @ObservedObject private var chip8 = Chip8Core.shared
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            EmulatorScreenView()
+                .ignoresSafeArea()
+
+            // Minimal exit — nearly invisible, corner tap
+            VStack {
+                HStack {
+                    Spacer()
+                    Button {
+                        appState.isTVModeActive = false
+                    } label: {
+                        Image(systemName: "iphone")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.25))
+                            .padding(16)
+                    }
+                }
+                Spacer()
+            }
         }
-        .sheet(isPresented: $appState.showFAQ) {
-            FAQView()
-        }
-        .sheet(item: $appState.showGameInfo) { game in
-            GameInfoSheet(game: game)
-        }
-        .sheet(item: $appState.showTweakPickerFor) { game in
-            TweakPickerSheet(game: game)
-        }
+        .statusBarHidden(true)
+        .persistentSystemOverlays(.hidden)
     }
 }

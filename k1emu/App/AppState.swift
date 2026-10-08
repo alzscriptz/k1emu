@@ -11,9 +11,7 @@ final class AppState: ObservableObject {
     @Published var showGameInfo: GameItem?
     @Published var showTweakPickerFor: GameItem?
     @Published var isTVModeActive: Bool = false
-    /// Browser content shown inside the Browser panel (not a full-screen mode)
     @Published var showBrowserInPanel: Bool = false
-    /// Keyboard shown inside Browser panel (for text entry games)
     @Published var showKeyboardInPanel: Bool = false
     @Published var isMouseMode: Bool = false
     @Published var showInGameMenu: Bool = false
@@ -30,6 +28,13 @@ final class AppState: ObservableObject {
     }
 
     func startGame(_ game: GameItem) {
+        // Auto-recognize system from extension (overrides stale library tags)
+        var game = game
+        let detected = CoreLoader.detectSystem(fileName: game.fileName)
+        if detected != "Other" && detected.uppercased() != game.system.uppercased() {
+            game.system = detected
+        }
+
         currentGame = game
         isPlaying = true
         loadedTweakName = nil
@@ -38,15 +43,13 @@ final class AppState: ObservableObject {
         showBrowserInPanel = false
         showKeyboardInPanel = false
         Chip8Core.shared.stop()
-
         CoreLoader.shared.prepareBundledCores()
 
         let path = game.fileURL.path
         let exists = FileManager.default.fileExists(atPath: path)
-        let ext = (game.fileName as NSString).pathExtension.lowercased()
-        let isChip8 = game.system.uppercased() == "CHIP8" || ext == "ch8" || ext == "c8"
+        let sys = game.system.uppercased()
 
-        if isChip8 && exists {
+        if sys == "CHIP8" && exists {
             if Chip8Core.shared.loadROM(path: path) {
                 usingBuiltinCore = true
                 coreStatus = "CHIP-8"
@@ -55,18 +58,17 @@ final class AppState: ObservableObject {
             }
         }
 
-        // NDS and others via dylib
         let ok = CoreLoader.shared.loadCore(for: game.system)
         if ok, let name = CoreLoader.shared.loadedCoreName {
             coreStatus = name
             if exists {
                 if CoreLoader.shared.loadGame(path: path) {
-                    romLoadStatus = "ROM loaded"
+                    romLoadStatus = "Running"
                 } else {
                     romLoadStatus = CoreLoader.shared.lastError ?? "ROM load failed"
                 }
             } else {
-                romLoadStatus = "ROM missing: \(game.fileName)"
+                romLoadStatus = "ROM missing"
             }
         } else {
             coreStatus = "Load failed"
