@@ -3,7 +3,7 @@ import UIKit
 import WebKit
 
 /// Controller layout: LT/LB · RT/RB, D-pad · GAME · YXBA,
-/// three dots, stick · Browser · stick. GAME takes most vertical space.
+/// three dots, stick · Browser · stick.
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -59,12 +59,12 @@ struct ControllerView: View {
     }
 
     private func photoLayout(height: CGFloat, width: CGFloat) -> some View {
-        // GAME gets ~48% of screen height so NDS dual-screen fills the panel
-        let gameH = max(220, height * 0.48)
-        let browserH: CGFloat = 72
+        // GAME takes most of the vertical space between shoulders and sticks
+        let gameH = max(260, height * 0.55)
+        let stickSize: CGFloat = 92
+        let browserH: CGFloat = 70
 
         return VStack(spacing: 0) {
-            // Top bar
             HStack {
                 Button {
                     haptic(.light)
@@ -100,7 +100,6 @@ struct ControllerView: View {
             .padding(.horizontal, 12)
             .padding(.top, 2)
 
-            // Shoulders
             HStack {
                 VStack(spacing: 4) {
                     shoulderButton("LT")
@@ -113,24 +112,24 @@ struct ControllerView: View {
                 }
             }
             .padding(.horizontal, 36)
-            .padding(.top, 4)
+            .padding(.top, 2)
 
-            // GAME row — large
+            // GAME row
             HStack(alignment: .center, spacing: 4) {
                 PhotoDPad()
-                    .frame(width: 88, height: 88)
+                    .frame(width: 90, height: 90)
 
                 gameScreen
                     .frame(maxWidth: .infinity)
                     .frame(height: gameH)
 
                 PhotoFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor)
-                    .frame(width: 100, height: 100)
+                    .frame(width: 102, height: 102)
             }
-            .padding(.horizontal, 8)
-            .padding(.top, 6)
+            .padding(.horizontal, 6)
+            .padding(.top, 4)
 
-            // Dots: Select · Browser toggle · Start
+            // Select · Browser · Start
             HStack(spacing: 22) {
                 holdDot(label: "−", id: InputBridge.SELECT)
                 DotButton(systemImage: "globe",
@@ -140,37 +139,34 @@ struct ControllerView: View {
                 }
                 holdDot(label: "+", id: InputBridge.START)
             }
-            .padding(.top, 8)
+            .padding(.top, 6)
 
-            Spacer(minLength: 4)
+            Spacer(minLength: 2)
 
-            // Sticks + Browser
             HStack(alignment: .center, spacing: 8) {
-                PhotoStick(offset: $leftStick)
-                    .frame(width: 68, height: 68)
+                PhotoStick(offset: $leftStick, size: stickSize)
 
                 browserPanel
                     .frame(maxWidth: .infinity)
                     .frame(height: browserH)
 
-                PhotoStick(offset: $rightStick)
-                    .frame(width: 68, height: 68)
+                PhotoStick(offset: $rightStick, size: stickSize)
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 10)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 8)
         }
         .frame(width: width, height: height)
     }
 
     private var gameScreen: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.black)
 
             if hasLivePixels {
                 EmulatorScreenView()
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .padding(3)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(2)
             } else {
                 VStack(spacing: 4) {
                     Text("GAME")
@@ -262,7 +258,7 @@ struct ControllerView: View {
     }
 }
 
-// MARK: - In-panel Browser
+// MARK: - Browser / keyboard
 
 struct InPanelBrowser: View {
     @EnvironmentObject var appState: AppState
@@ -454,22 +450,36 @@ struct PhotoFaceButtons: View {
 
 struct PhotoStick: View {
     @Binding var offset: CGSize
-    private let maxTravel: CGFloat = 18
+    var size: CGFloat = 92
+    private var maxTravel: CGFloat { size * 0.22 }
+    private var knob: CGFloat { size * 0.58 }
+
     var body: some View {
         ZStack {
-            Circle().stroke(Color(white: 0.7), lineWidth: 8).background(Circle().fill(Color(white: 0.9)))
-            Circle().fill(Color.black).frame(width: 46, height: 46).offset(offset)
-                .gesture(DragGesture()
-                    .onChanged { v in
-                        offset = CGSize(
-                            width: max(-maxTravel, min(maxTravel, v.translation.width)),
-                            height: max(-maxTravel, min(maxTravel, v.translation.height))
-                        )
-                    }
-                    .onEnded { _ in
-                        withAnimation(.spring(response: 0.22, dampingFraction: 0.7)) { offset = .zero }
-                    })
+            Circle()
+                .stroke(Color(white: 0.7), lineWidth: size * 0.1)
+                .background(Circle().fill(Color(white: 0.9)))
+                .frame(width: size, height: size)
+            Circle()
+                .fill(Color.black)
+                .frame(width: knob, height: knob)
+                .offset(offset)
+                .gesture(
+                    DragGesture()
+                        .onChanged { v in
+                            offset = CGSize(
+                                width: max(-maxTravel, min(maxTravel, v.translation.width)),
+                                height: max(-maxTravel, min(maxTravel, v.translation.height))
+                            )
+                        }
+                        .onEnded { _ in
+                            withAnimation(.spring(response: 0.22, dampingFraction: 0.7)) {
+                                offset = .zero
+                            }
+                        }
+                )
         }
+        .frame(width: size, height: size)
     }
 }
 

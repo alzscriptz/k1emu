@@ -68,9 +68,7 @@ jobs:
 
           download_one() {
             local z="$1"
-            local url="$BASE/$z"
-            echo "GET $z"
-            if curl -fsSL --retry 3 --retry-delay 2 -o "/tmp/corezips/$z" "$url"; then
+            if curl -fsSL --retry 3 --retry-delay 2 -o "/tmp/corezips/$z" "$BASE/$z"; then
               unzip -o -q "/tmp/corezips/$z" -d /tmp/coreextract || true
             else
               echo "WARN: failed $z"
@@ -97,10 +95,8 @@ jobs:
           [ -f Cores/snes9x_libretro.dylib ] && cp Cores/snes9x_libretro.dylib Cores/libsnes.dylib || true
           [ -f Cores/gambatte_libretro.dylib ] && cp Cores/gambatte_libretro.dylib Cores/libgb.dylib || true
 
-          echo "=== Cores packaged ==="
-          ls -lah Cores/ | head -80
+          ls -lah Cores/ | head -40
           echo "Count: $(ls Cores/*.dylib 2>/dev/null | wc -l)"
-          du -sh Cores
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -129,13 +125,8 @@ jobs:
           mkdir -p Payload/k1emu.app/Frameworks
           find Cores -name "*.dylib" -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
 
-          echo "=== Frameworks ==="
-          ls Payload/k1emu.app/Frameworks/ | wc -l
-          du -sh Payload/k1emu.app/Frameworks
-
           zip -qr k1emu.ipa Payload
           ls -lah k1emu.ipa
-          unzip -l k1emu.ipa | head -80
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -147,17 +138,15 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.4.0
-          name: k1emu v2.4.0 — full GAME + controls
+          tag_name: v2.4.1
+          name: k1emu v2.4.1 — GAME fills panel + bigger sticks
           body: |
-            ## What's new
-            - GAME panel uses ~half the screen so NDS dual-screen fills the window
-            - Real D-pad / ABXY / shoulders / Start(+) Select(−) wired to libretro
-            - Status chips under Browser removed
-            - Same Nintendo + essential cores from buildbot nightly
+            - GAME pixels use **scaledToFill** — full black GAME window
+            - GAME panel ~55% of screen height
+            - Analog sticks ~92pt (medium)
+            - D-pad / ABXY / shoulders / Start+Select wired
 
-            Install with LiveContainer / AltStore / SideStore / TrollStore.
-            Import your own ROMs. Unzip .zip ROMs before import if needed.
+            Install: LiveContainer / AltStore / SideStore / TrollStore
           files: k1emu.ipa
           make_latest: true
           fail_on_unmatched_files: false

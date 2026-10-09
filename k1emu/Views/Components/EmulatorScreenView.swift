@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Fills the GAME panel with live pixels (scaled to fit, no tiny strip).
+/// Fills the entire GAME panel with live pixels (no letterbox strip).
 struct EmulatorScreenView: View {
     @ObservedObject private var chip8 = Chip8Core.shared
     @ObservedObject private var fb = FrameBuffer.shared
@@ -15,14 +15,16 @@ struct EmulatorScreenView: View {
                     Image(decorative: img, scale: 1.0)
                         .resizable()
                         .interpolation(.none)
-                        .scaledToFit()
+                        .scaledToFill()
                         .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
                 } else if let img = fb.makeCGImage() {
                     Image(decorative: img, scale: 1.0)
                         .resizable()
                         .interpolation(.none)
-                        .scaledToFit()
+                        .scaledToFill()
                         .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
