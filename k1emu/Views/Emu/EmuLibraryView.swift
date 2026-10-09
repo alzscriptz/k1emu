@@ -51,21 +51,21 @@ struct EmuLibraryView: View {
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(romLibrary.games) { game in
-                            GameCard(game: game) {
-                                romLibrary.markPlayed(game)
-                                appState.startGame(game)
+                        ForEach(romLibrary.games, id: \.id) { item in
+                            GameCard(game: item) {
+                                romLibrary.markPlayed(item)
+                                appState.startGame(item)
                             }
                             .contextMenu {
-                                Button { appState.showGameInfo = game } label: {
+                                Button { appState.showGameInfo = item } label: {
                                     Label("Info", systemImage: "info.circle")
                                 }
-                                Button { appState.showTweakPickerFor = game } label: {
+                                Button { appState.showTweakPickerFor = item } label: {
                                     Label("Tweaks", systemImage: "slider.horizontal.3")
                                 }
                                 Divider()
                                 Button(role: .destructive) {
-                                    romLibrary.remove(game)
+                                    romLibrary.delete(item)
                                 } label: {
                                     Label("Remove", systemImage: "trash")
                                 }
