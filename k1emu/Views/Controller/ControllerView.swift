@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import WebKit
 
-/// Controller UI. When showGamePanel == false (TV mode), phone is pure controller.
+/// Controller UI. GAME panel is large; pixels fill it completely.
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -60,17 +60,17 @@ struct ControllerView: View {
     }
 
     private func layout(size: CGSize, landscape: Bool) -> some View {
-        let stickSize: CGFloat = landscape ? 80 : 88
-        let browserH: CGFloat = landscape ? 72 : 88
-        let sideW: CGFloat = landscape ? 90 : 96
-        let topBarH: CGFloat = 34
+        let stickSize: CGFloat = landscape ? 78 : 86
+        let browserH: CGFloat = landscape ? 68 : 80
+        let sideW: CGFloat = landscape ? 84 : 90
+        let topBarH: CGFloat = 32
 
-        // GAME only when not in TV mode
-        let gameW = showGamePanel ? max(160, size.width - sideW * 2 - 10) : 0
-        let reservedBottom = browserH + stickSize + 36
-        let reservedTop = topBarH + 28
-        let maxGameH = max(180, size.height - reservedTop - reservedBottom)
-        let gameH = showGamePanel ? min(maxGameH, size.height * (landscape ? 0.48 : 0.44)) : 0
+        // Maximize GAME box
+        let gameW = showGamePanel ? max(180, size.width - sideW * 2 - 8) : 0
+        let reservedBottom = browserH + stickSize + 32
+        let reservedTop = topBarH + 24
+        let maxGameH = max(200, size.height - reservedTop - reservedBottom)
+        let gameH = showGamePanel ? min(maxGameH, size.height * (landscape ? 0.55 : 0.50)) : 0
 
         return VStack(spacing: 0) {
             topBar
@@ -88,7 +88,7 @@ struct ControllerView: View {
                     shoulderButton("RB")
                 }
             }
-            .padding(.horizontal, landscape ? 24 : 32)
+            .padding(.horizontal, landscape ? 22 : 28)
             .padding(.top, 1)
 
             HStack(alignment: .center, spacing: 4) {
@@ -100,7 +100,6 @@ struct ControllerView: View {
                     gameScreen
                         .frame(width: gameW, height: gameH)
                 } else {
-                    // TV mode: center status between enlarged controls
                     VStack(spacing: 6) {
                         Text("CONTROLLER")
                             .font(.system(size: 14, weight: .bold, design: .rounded))
@@ -185,21 +184,19 @@ struct ControllerView: View {
         .buttonStyle(.plain)
     }
 
+    /// Black GAME bezel — content is edge-to-edge inside (no inner padding).
     private var gameScreen: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(Color.black)
-
+            Color.black
             if hasLivePixels {
                 EmulatorScreenView()
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .padding(1)
             } else {
                 Text("GAME")
                     .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
             }
         }
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private var browserPanel: some View {
@@ -472,7 +469,7 @@ struct PhotoFaceButtons: View {
 
 struct PhotoStick: View {
     @Binding var offset: CGSize
-    var size: CGFloat = 88
+    var size: CGFloat = 86
     private var maxTravel: CGFloat { size * 0.22 }
     private var knob: CGFloat { size * 0.58 }
 

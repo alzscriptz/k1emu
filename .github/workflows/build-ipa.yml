@@ -137,12 +137,12 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.4.8
-          name: k1emu v2.4.8 — full GAME fill + real TV controller mode
+          tag_name: v2.4.9
+          name: k1emu v2.4.9 — GAME truly fills (UIKit aspectFill)
           body: |
-            - GAME panel filled edge-to-edge (scaledToFill)
-            - **TV mode**: phone = controller only; external display (HDMI / AirPlay as separate screen) shows game only
-            - TV button toggles mode; connect AirPlay/HDMI for the game on the TV
+            - **UIKit UIImageView scaleAspectFill** so pixels cover the entire GAME panel (no black bars)
+            - Larger GAME box (~55% height in landscape)
+            - No inner padding around the video
 
             Install with LiveContainer / AltStore / SideStore / TrollStore.
           files: k1emu.ipa
