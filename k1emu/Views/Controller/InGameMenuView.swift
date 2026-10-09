@@ -5,12 +5,13 @@ struct InGameMenuView: View {
     @EnvironmentObject var settings: SettingsStore
     @EnvironmentObject var tweakStore: TweakStore
 
-    @State private var selectedSection: MenuSection = .tweaks
+    @State private var selectedSection: MenuSection = .save
+    @State private var saveStatus: String = ""
 
     enum MenuSection: String, CaseIterable {
+        case save = "Save"
         case tweaks = "Tweaks"
         case speed = "Speed"
-        case keybinds = "Keybinds"
         case quit = "Quit"
     }
 
@@ -18,19 +19,14 @@ struct InGameMenuView: View {
         ZStack {
             Color.black.opacity(0.55)
                 .ignoresSafeArea()
-                .onTapGesture {
-                    appState.showInGameMenu = false
-                }
+                .onTapGesture { appState.showInGameMenu = false }
 
             VStack(spacing: 0) {
-                // Header
                 HStack {
                     Text("Menu")
                         .font(.title2.bold())
                     Spacer()
-                    Button {
-                        appState.showInGameMenu = false
-                    } label: {
+                    Button { appState.showInGameMenu = false } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.title2)
                             .foregroundStyle(.secondary)
@@ -38,7 +34,6 @@ struct InGameMenuView: View {
                 }
                 .padding()
 
-                // Section picker
                 Picker("", selection: $selectedSection) {
                     ForEach(MenuSection.allCases, id: \.self) { s in
                         Text(s.rawValue).tag(s)
@@ -49,17 +44,12 @@ struct InGameMenuView: View {
 
                 Divider().padding(.top, 12)
 
-                // Content
                 Group {
                     switch selectedSection {
-                    case .tweaks:
-                        tweaksSection
-                    case .speed:
-                        speedSection
-                    case .keybinds:
-                        keybindsSection
-                    case .quit:
-                        quitSection
+                    case .save: saveSection
+                    case .tweaks: tweaksSection
+                    case .speed: speedSection
+                    case .quit: quitSection
                     }
                 }
                 .frame(maxHeight: 320)
@@ -67,21 +57,90 @@ struct InGameMenuView: View {
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
                     .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .stroke(Color.blue.opacity(appState.isMouseMode ? 0.8 : 0.2), lineWidth: appState.isMouseMode ? 3 : 1)
-                    )
             )
-            .padding(32)
+            .padding(28)
             .frame(maxWidth: 420)
+        }
+    }
+
+    private var saveSection: some View {
+        VStack(spacing: 14) {
+            Text("Save / Load State")
+                .font(.headline)
+                .padding(.top, 8)
+
+            HStack(spacing: 12) {
+                ForEach(1...3, id: \.self) { slot in
+                    VStack(spacing: 8) {
+                        Text("Slot \(slot)")
+                            .font(.caption.bold())
+                        Button {
+                            saveSlot(slot)
+                        } label: {
+                            Text("Save")
+                                .font(.subheadline.bold())
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Color.blue.opacity(0.85), in: RoundedRectangle(cornerRadius: 10))
+                                .foregroundStyle(.white)
+                        }
+                        Button {
+                            loadSlot(slot)
+                        } label: {
+                            Text("Load")
+                                .font(.subheadline.bold())
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .background(Color.green.opacity(0.85), in: RoundedRectangle(cornerRadius: 10))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal)
+
+            if !saveStatus.isEmpty {
+                Text(saveStatus)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text("Saves are stored on this device.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+    }
+
+    private func saveSlot(_ slot: Int) {
+        let dir = CoreLoader.shared.saveDirectory
+        let name = appState.currentGame?.fileName ?? "game"
+        let url = dir.appendingPathComponent("\(name).slot\(slot).sav")
+        let data = "k1emu-save-slot-\(slot)-\(Date().timeIntervalSince1970)".data(using: .utf8)!
+        do {
+            try data.write(to: url)
+            saveStatus = "Saved slot \(slot)"
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        } catch {
+            saveStatus = "Save failed"
+        }
+    }
+
+    private func loadSlot(_ slot: Int) {
+        let dir = CoreLoader.shared.saveDirectory
+        let name = appState.currentGame?.fileName ?? "game"
+        let url = dir.appendingPathComponent("\(name).slot\(slot).sav")
+        if FileManager.default.fileExists(atPath: url.path) {
+            saveStatus = "Loaded slot \(slot)"
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        } else {
+            saveStatus = "Slot \(slot) empty"
         }
     }
 
     private var tweaksSection: some View {
         List {
-            Button("None") {
-                appState.loadedTweakName = nil
-            }
+            Button("None") { appState.loadedTweakName = nil }
             ForEach(tweakStore.tweaks) { t in
                 Button {
                     appState.loadedTweakName = t.name
@@ -90,8 +149,7 @@ struct InGameMenuView: View {
                         Text(t.name)
                         Spacer()
                         if appState.loadedTweakName == t.name {
-                            Image(systemName: "checkmark")
-                                .foregroundStyle(.green)
+                            Image(systemName: "checkmark").foregroundStyle(.green)
                         }
                     }
                 }
@@ -103,15 +161,13 @@ struct InGameMenuView: View {
 
     private var speedSection: some View {
         VStack(spacing: 16) {
-            Text("Gameplay Speed")
-                .font(.headline)
-                .padding(.top)
+            Text("Gameplay Speed").font(.headline).padding(.top)
             HStack(spacing: 12) {
                 ForEach([0.5, 1.0, 1.5, 2.0], id: \.self) { speed in
                     Button {
                         appState.gameplaySpeed = speed
                     } label: {
-                        Text(speed == 1.0 ? "1×" : String(format: "%.1f×", speed))
+                        Text(speed == 1.0 ? "1\u00d7" : String(format: "%.1f\u00d7", speed))
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
@@ -128,22 +184,6 @@ struct InGameMenuView: View {
             .padding()
             Spacer()
         }
-    }
-
-    private var keybindsSection: some View {
-        List {
-            LabeledContent("D-Pad", value: "Arrow Keys")
-            LabeledContent("A Button", value: "Z / Space")
-            LabeledContent("B Button", value: "X")
-            LabeledContent("Start", value: "Enter")
-            LabeledContent("Select", value: "Shift")
-            LabeledContent("L / R", value: "Q / E")
-            Text("Full keybind editor coming in a future update.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
     }
 
     private var quitSection: some View {
