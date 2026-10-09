@@ -2,8 +2,8 @@ import SwiftUI
 import UIKit
 import WebKit
 
-/// Exact reference layout: shoulders · D-pad · GAME · ABXY · dots · sticks · Browser.
-/// No overlap. Press VFX on every control.
+/// Reference controller. GAME is pure video — no controls inside.
+/// Dots: cursor · CHIP-8 pad · browser. No − / +.
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -27,6 +27,10 @@ struct ControllerView: View {
         (appState.usingBuiltinCore && chip8.isRunning) || (core.isRunning && fb.width > 0)
     }
 
+    private var isChip8: Bool {
+        appState.usingBuiltinCore || game.system.uppercased() == "CHIP8"
+    }
+
     var body: some View {
         ZStack {
             Color.white.ignoresSafeArea()
@@ -34,87 +38,124 @@ struct ControllerView: View {
             GeometryReader { geo in
                 layout(in: geo.size)
             }
+
+            // Cursor-mode ring
+            if appState.isMouseMode {
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(Color.cyan.opacity(0.85), lineWidth: 3)
+                    .padding(10)
+                    .allowsHitTesting(false)
+                    .shadow(color: .cyan.opacity(0.35), radius: 8)
+            }
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .onDisappear { InputBridge.shared.clearAll() }
+        .onDisappear {
+            InputBridge.shared.clearAll()
+            Chip8Core.shared.clearKeys()
+        }
     }
 
     private func layout(in size: CGSize) -> some View {
         let landscape = size.width > size.height
-        let pad: CGFloat = landscape ? 10 : 14
+        let gap: CGFloat = landscape ? 14 : 16
 
-        // Fixed control sizes from reference proportions
-        let sideCtrl: CGFloat = landscape ? 78 : 86
-        let stickSize: CGFloat = landscape ? 88 : 100
-        let faceR: CGFloat = landscape ? 16 : 18
-        let browserH: CGFloat = landscape ? 56 : 64
-        let topH: CGFloat = 28
+        let sideCtrl: CGFloat = landscape ? 76 : 84
+        let stickSize: CGFloat = landscape ? 90 : 102
+        let faceR: CGFloat = landscape ? 17 : 19
+        let bottomH: CGFloat = landscape ? 58 : 66
+        let topH: CGFloat = 30
 
-        // GAME: centered, clear of D-pad / face
-        let gameW = min(size.width - sideCtrl * 2 - pad * 3, landscape ? size.width * 0.42 : size.width * 0.50)
-        let gameH = gameW * 0.62
+        // GAME only — never shares space with buttons
+        let gameW = min(size.width - sideCtrl * 2 - gap * 3,
+                        landscape ? size.width * 0.40 : size.width * 0.48)
+        let gameH = gameW * 0.60
 
         return VStack(spacing: 0) {
-            // Top chrome (menu / title / tv / close) — thin, doesn't crowd GAME
-            topBar
-                .frame(height: topH)
-                .padding(.horizontal, 12)
+            topBar.frame(height: topH).padding(.horizontal, 12)
 
-            // Shoulders — LT/RT triangles, LB/RB bars (match reference)
+            // Shoulders — spaced out to corners
             HStack {
-                VStack(spacing: 5) {
-                    ShoulderCap(label: "LT", triangular: true, color: shoulderFill)
-                    ShoulderCap(label: "LB", triangular: false, color: shoulderFill)
+                VStack(spacing: 6) {
+                    ShoulderCap(label: "LT", color: shoulderFill)
+                    ShoulderCap(label: "LB", color: shoulderFill)
                 }
-                Spacer()
-                VStack(spacing: 5) {
-                    ShoulderCap(label: "RT", triangular: true, color: shoulderFill)
-                    ShoulderCap(label: "RB", triangular: false, color: shoulderFill)
+                Spacer(minLength: 40)
+                VStack(spacing: 6) {
+                    ShoulderCap(label: "RT", color: shoulderFill)
+                    ShoulderCap(label: "RB", color: shoulderFill)
                 }
             }
-            .padding(.horizontal, landscape ? 40 : 48)
-            .padding(.top, 6)
+            .padding(.horizontal, landscape ? 44 : 52)
+            .padding(.top, 8)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 10)
 
-            // Main row: D-pad · GAME · face — equal spacing, no overlap
-            HStack(alignment: .center, spacing: pad) {
+            // D-pad · GAME · face — clear gaps, nothing on GAME
+            HStack(alignment: .center, spacing: gap) {
                 RefDPad()
                     .frame(width: sideCtrl, height: sideCtrl)
 
-                gameScreen
+                pureGameScreen
                     .frame(width: gameW, height: gameH)
 
                 RefFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor, radius: faceR)
-                    .frame(width: sideCtrl + 8, height: sideCtrl + 8)
+                    .frame(width: sideCtrl + 10, height: sideCtrl + 10)
             }
-            .padding(.horizontal, pad)
+            .padding(.horizontal, gap)
 
-            // Three dots under GAME
-            HStack(spacing: 10) {
-                holdDot(label: "−", id: InputBridge.SELECT)
-                DotButton(
-                    systemImage: "globe",
-                    isActive: appState.showBrowserInPanel,
-                    activeColor: .cyan
+            // Three dots ONLY — cursor · CHIP-8 pad · browser (no − / +)
+            HStack(spacing: 18) {
+                ModeDot(
+                    active: appState.isMouseMode,
+                    color: .cyan,
+                    label: "cursor"
+                ) {
+                    haptic(.medium)
+                    appState.isMouseMode.toggle()
+                    if appState.isMouseMode {
+                        appState.showKeyboardInPanel = false
+                        appState.showBrowserInPanel = false
+                    }
+                }
+
+                ModeDot(
+                    active: appState.showKeyboardInPanel,
+                    color: .orange,
+                    label: "chip8"
+                ) {
+                    haptic(.medium)
+                    appState.showKeyboardInPanel.toggle()
+                    if appState.showKeyboardInPanel {
+                        appState.showBrowserInPanel = false
+                        appState.isMouseMode = false
+                    }
+                }
+
+                ModeDot(
+                    active: appState.showBrowserInPanel,
+                    color: .purple,
+                    label: "web"
                 ) {
                     haptic(.medium)
                     appState.toggleBrowserPanel()
+                    if appState.showBrowserInPanel {
+                        appState.showKeyboardInPanel = false
+                        appState.isMouseMode = false
+                    }
                 }
-                holdDot(label: "+", id: InputBridge.START)
             }
-            .padding(.top, 10)
+            .padding(.top, 12)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 10)
 
-            // Bottom: stick · Browser · stick
-            HStack(alignment: .center, spacing: 12) {
+            // Sticks + center panel (Browser or CHIP-8 pad)
+            HStack(alignment: .center, spacing: 14) {
                 RefStick(offset: $leftStick, size: stickSize)
 
-                browserPanel
+                centerPanel
                     .frame(maxWidth: .infinity)
-                    .frame(height: browserH)
+                    .frame(height: bottomH)
 
                 RefStick(offset: $rightStick, size: stickSize)
             }
@@ -124,7 +165,7 @@ struct ControllerView: View {
         .frame(width: size.width, height: size.height)
     }
 
-    // MARK: - Top bar
+    // MARK: - Top
 
     private var topBar: some View {
         HStack(spacing: 8) {
@@ -134,7 +175,7 @@ struct ControllerView: View {
             }
             Text(game.name)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.black.opacity(0.55))
+                .foregroundStyle(.black.opacity(0.5))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
             IconBtn(appState.isTVModeActive ? "tv.fill" : "tv") {
@@ -159,69 +200,58 @@ struct ControllerView: View {
         .buttonStyle(PressPopStyle())
     }
 
-    // MARK: - GAME
+    // MARK: - Pure GAME (nothing else inside)
 
-    private var gameScreen: some View {
+    private var pureGameScreen: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(Color.black)
-                .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+                .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
 
             if hasLivePixels && showGamePanel {
                 EmulatorScreenView()
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .padding(2)
-            } else {
+            } else if showGamePanel {
                 Text("GAME")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
+            } else {
+                Text("CONTROLLER")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.5))
             }
         }
+        // Cursor mode: drag on GAME for pointer (visual only ring is global)
+        .gesture(
+            appState.isMouseMode
+            ? DragGesture(minimumDistance: 0).onChanged { _ in
+                // reserved for touch-pointer mapping later
+              }
+            : nil
+        )
     }
 
-    // MARK: - Browser
+    // MARK: - Center bottom panel
 
-    private var browserPanel: some View {
+    @ViewBuilder
+    private var centerPanel: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.black)
-                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+                .shadow(color: .black.opacity(0.1), radius: 5, y: 2)
 
             if appState.showKeyboardInPanel {
-                InPanelKeyboard()
+                Chip8Keypad()
             } else if appState.showBrowserInPanel {
                 InPanelBrowser()
             } else {
-                Button {
-                    haptic(.medium)
-                    appState.toggleBrowserPanel()
-                } label: {
-                    Text("Browser")
-                        .font(.system(size: 20, weight: .semibold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                .buttonStyle(PressPopStyle())
+                Text(isChip8 ? "Browser · CHIP-8 pad" : "Browser")
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.85))
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-    }
-
-    private func holdDot(label: String, id: UInt32) -> some View {
-        Text(label)
-            .font(.system(size: 13, weight: .bold))
-            .foregroundStyle(.white)
-            .frame(width: 26, height: 26)
-            .background(Circle().fill(Color.black.opacity(0.75)))
-            .contentShape(Circle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in InputBridge.shared.set(id, pressed: true) }
-                    .onEnded { _ in
-                        InputBridge.shared.set(id, pressed: false)
-                        haptic(.light)
-                    }
-            )
     }
 
     private func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
@@ -229,11 +259,101 @@ struct ControllerView: View {
     }
 }
 
-// MARK: - Shoulders (reference shape)
+// MARK: - Mode dots (cursor / chip8 / browser)
+
+struct ModeDot: View {
+    let active: Bool
+    let color: Color
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Circle()
+                .fill(active ? color : Color.black.opacity(0.55))
+                .frame(width: 11, height: 11)
+                .overlay(
+                    Circle()
+                        .stroke(active ? color : Color.clear, lineWidth: 2)
+                        .frame(width: 18, height: 18)
+                )
+                .shadow(color: active ? color.opacity(0.55) : .clear, radius: 7)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressPopStyle())
+        .accessibilityLabel(label)
+    }
+}
+
+// MARK: - CHIP-8 hex keypad (not a text keyboard)
+
+struct Chip8Keypad: View {
+    /// Standard CHIP-8 layout:
+    /// 1 2 3 C
+    /// 4 5 6 D
+    /// 7 8 9 E
+    /// A 0 B F
+    private let rows: [[(String, Int)]] = [
+        [("1", 1), ("2", 2), ("3", 3), ("C", 0xC)],
+        [("4", 4), ("5", 5), ("6", 6), ("D", 0xD)],
+        [("7", 7), ("8", 8), ("9", 9), ("E", 0xE)],
+        [("A", 0xA), ("0", 0), ("B", 0xB), ("F", 0xF)],
+    ]
+
+    var body: some View {
+        VStack(spacing: 3) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 3) {
+                    ForEach(row, id: \.1) { label, key in
+                        Chip8Key(label: label, key: key)
+                    }
+                }
+            }
+        }
+        .padding(4)
+    }
+}
+
+struct Chip8Key: View {
+    let label: String
+    let key: Int
+    @State private var pressed = false
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 11, weight: .bold, design: .monospaced))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(pressed ? Color.orange.opacity(0.7) : Color.white.opacity(0.14))
+            )
+            .scaleEffect(pressed ? 0.92 : 1)
+            .animation(.spring(response: 0.12, dampingFraction: 0.7), value: pressed)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        if !pressed {
+                            pressed = true
+                            Chip8Core.shared.setKey(key, pressed: true)
+                        }
+                    }
+                    .onEnded { _ in
+                        pressed = false
+                        Chip8Core.shared.setKey(key, pressed: false)
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
+            )
+    }
+}
+
+// MARK: - Shoulders
 
 struct ShoulderCap: View {
     let label: String
-    let triangular: Bool
     let color: Color
     @State private var pressed = false
 
@@ -241,11 +361,10 @@ struct ShoulderCap: View {
         Text(label)
             .font(.system(size: 10, weight: .bold, design: .rounded))
             .foregroundStyle(Color(white: 0.35))
-            .frame(width: triangular ? 52 : 56, height: triangular ? 20 : 22)
+            .frame(width: label.hasSuffix("T") ? 52 : 56, height: label.hasSuffix("T") ? 20 : 22)
             .background(
                 Group {
-                    if triangular {
-                        // Trapezoid-ish top shoulder
+                    if label.hasSuffix("T") {
                         Capsule().fill(color)
                     } else {
                         RoundedRectangle(cornerRadius: 6).fill(color)
@@ -253,8 +372,7 @@ struct ShoulderCap: View {
                 }
             )
             .scaleEffect(pressed ? 0.92 : 1)
-            .brightness(pressed ? -0.06 : 0)
-            .animation(.spring(response: 0.16, dampingFraction: 0.65), value: pressed)
+            .animation(.spring(response: 0.15, dampingFraction: 0.65), value: pressed)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -277,37 +395,33 @@ struct ShoulderCap: View {
     }
 }
 
-// MARK: - D-pad (reference plus)
+// MARK: - D-pad
 
 struct RefDPad: View {
-    @State private var glow = false
+    @State private var held = false
 
     var body: some View {
         GeometryReader { geo in
             let s = min(geo.size.width, geo.size.height)
             ZStack {
-                // Vertical bar
                 RoundedRectangle(cornerRadius: s * 0.18)
                     .fill(Color.black)
                     .frame(width: s * 0.30, height: s)
-                // Horizontal bar
                 RoundedRectangle(cornerRadius: s * 0.18)
                     .fill(Color.black)
                     .frame(width: s, height: s * 0.30)
-                // Center nub
                 Circle()
                     .fill(Color.black)
                     .frame(width: s * 0.22, height: s * 0.22)
             }
             .frame(width: s, height: s)
-            .shadow(color: glow ? Color.black.opacity(0.25) : .clear, radius: 6)
-            .scaleEffect(glow ? 0.96 : 1)
-            .animation(.spring(response: 0.15, dampingFraction: 0.7), value: glow)
+            .scaleEffect(held ? 0.96 : 1)
+            .animation(.spring(response: 0.14, dampingFraction: 0.7), value: held)
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { v in
-                        glow = true
+                        held = true
                         let c = CGPoint(x: s / 2, y: s / 2)
                         let dx = v.location.x - c.x
                         let dy = v.location.y - c.y
@@ -319,7 +433,7 @@ struct RefDPad: View {
                         ib.set(InputBridge.RIGHT, pressed: dx > dead)
                     }
                     .onEnded { _ in
-                        glow = false
+                        held = false
                         let ib = InputBridge.shared
                         ib.set(InputBridge.UP, pressed: false)
                         ib.set(InputBridge.DOWN, pressed: false)
@@ -331,24 +445,20 @@ struct RefDPad: View {
     }
 }
 
-// MARK: - Face buttons (reference diamond)
+// MARK: - Face
 
 struct RefFaceButtons: View {
     let y: Color, x: Color, b: Color, a: Color
     var radius: CGFloat = 18
 
     var body: some View {
-        let gap = radius * 2.15
+        let gap = radius * 2.2
         ZStack {
-            face(y, "Y").offset(y: -gap)
-            face(x, "X").offset(x: -gap)
-            face(b, "B").offset(x: gap)
-            face(a, "A").offset(y: gap)
+            FaceButton(color: y, label: "Y", radius: radius).offset(y: -gap)
+            FaceButton(color: x, label: "X", radius: radius).offset(x: -gap)
+            FaceButton(color: b, label: "B", radius: radius).offset(x: gap)
+            FaceButton(color: a, label: "A", radius: radius).offset(y: gap)
         }
-    }
-
-    private func face(_ color: Color, _ label: String) -> some View {
-        FaceButton(color: color, label: label, radius: radius)
     }
 }
 
@@ -366,10 +476,10 @@ struct FaceButton: View {
             .background(
                 Circle()
                     .fill(color)
-                    .shadow(color: color.opacity(pressed ? 0.55 : 0.25), radius: pressed ? 10 : 4, y: pressed ? 0 : 2)
+                    .shadow(color: color.opacity(pressed ? 0.55 : 0.22), radius: pressed ? 10 : 4, y: 2)
             )
             .scaleEffect(pressed ? 0.88 : 1)
-            .animation(.spring(response: 0.14, dampingFraction: 0.6), value: pressed)
+            .animation(.spring(response: 0.13, dampingFraction: 0.6), value: pressed)
             .contentShape(Circle())
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -392,7 +502,7 @@ struct FaceButton: View {
     }
 }
 
-// MARK: - Analog stick
+// MARK: - Stick
 
 struct RefStick: View {
     @Binding var offset: CGSize
@@ -406,13 +516,10 @@ struct RefStick: View {
                 .stroke(Color(white: 0.72), lineWidth: size * 0.11)
                 .background(Circle().fill(Color(white: 0.92)))
                 .frame(width: size, height: size)
-                .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
-
             Circle()
                 .fill(Color.black)
                 .frame(width: knob, height: knob)
                 .offset(offset)
-                .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
                 .gesture(
                     DragGesture()
                         .onChanged { v in
@@ -432,42 +539,15 @@ struct RefStick: View {
     }
 }
 
-// MARK: - Shared chrome
-
-struct DotButton: View {
-    let systemImage: String
-    let isActive: Bool
-    let activeColor: Color
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Circle()
-                .fill(isActive ? activeColor.opacity(0.9) : Color.black.opacity(0.55))
-                .frame(width: 10, height: 10)
-                .overlay(
-                    Circle()
-                        .stroke(isActive ? activeColor : .clear, lineWidth: 2)
-                        .frame(width: 16, height: 16)
-                )
-                .shadow(color: isActive ? activeColor.opacity(0.5) : .clear, radius: 6)
-        }
-        .buttonStyle(PressPopStyle())
-        .frame(width: 28, height: 28)
-        .contentShape(Circle())
-    }
-}
+// MARK: - Shared
 
 struct PressPopStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.92 : 1)
-            .brightness(configuration.isPressed ? -0.05 : 0)
-            .animation(.spring(response: 0.16, dampingFraction: 0.65), value: configuration.isPressed)
+            .animation(.spring(response: 0.15, dampingFraction: 0.65), value: configuration.isPressed)
     }
 }
-
-// MARK: - Browser / keyboard
 
 struct InPanelBrowser: View {
     @EnvironmentObject var appState: AppState
@@ -501,47 +581,6 @@ struct MiniWebView: UIViewRepresentable {
     }
 }
 
-struct InPanelKeyboard: View {
-    @EnvironmentObject var appState: AppState
-    @State private var buffer = ""
-    private let keys = ["1","2","3","4","Q","W","E","A","S","D","Z","X"]
-
-    var body: some View {
-        VStack(spacing: 3) {
-            HStack {
-                Text(buffer.isEmpty ? "type…" : buffer)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.white.opacity(buffer.isEmpty ? 0.4 : 0.9))
-                    .lineLimit(1)
-                Spacer()
-                Button { appState.showKeyboardInPanel = false } label: {
-                    Image(systemName: "xmark").font(.system(size: 9)).foregroundStyle(.white.opacity(0.7))
-                }
-            }
-            .padding(.horizontal, 6)
-
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 4), spacing: 3) {
-                ForEach(keys, id: \.self) { k in
-                    Button {
-                        buffer += k.lowercased()
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    } label: {
-                        Text(k)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 5)
-                            .background(Color.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 4)
-        }
-        .padding(4)
-    }
-}
-
 struct ControllerSettingsModal: View {
     @Binding var isPresented: Bool
     var onQuit: () -> Void
@@ -552,7 +591,6 @@ struct ControllerSettingsModal: View {
             VStack(spacing: 16) {
                 Text("Settings").font(.title3.bold())
                 Toggle("Show FPS", isOn: $settings.showFPS)
-                Toggle("Liquid Glass", isOn: $settings.useLiquidGlass)
                 Button(role: .destructive) { onQuit() } label: {
                     Label("Quit Game", systemImage: "xmark.circle")
                         .frame(maxWidth: .infinity).padding()
