@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct InGameMenuView: View {
     @EnvironmentObject var appState: AppState
@@ -167,7 +168,7 @@ struct InGameMenuView: View {
                     Button {
                         appState.gameplaySpeed = speed
                     } label: {
-                        Text(speed == 1.0 ? "1\u00d7" : String(format: "%.1f\u00d7", speed))
+                        Text(speed == 1.0 ? "1x" : String(format: "%.1fx", speed))
                             .font(.headline)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)

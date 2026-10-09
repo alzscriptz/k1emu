@@ -13,7 +13,7 @@ struct ModeDot: View {
     var body: some View {
         Button(action: action) {
             Circle()
-                .fill(active ? color : Color.white.opacity(0.35))
+                .fill(active ? color : Color.black.opacity(0.55))
                 .frame(width: 11, height: 11)
                 .overlay(
                     Circle()
@@ -98,7 +98,7 @@ struct ShoulderCap: View {
     var body: some View {
         Text(label)
             .font(.system(size: 10, weight: .bold, design: .rounded))
-            .foregroundStyle(Color(white: 0.25))
+            .foregroundStyle(Color(white: 0.35))
             .frame(width: max(44, CGFloat(label.count) * 14 + 16), height: 22)
             .background(Capsule().fill(color))
             .scaleEffect(pressed ? 0.92 : 1)
@@ -122,56 +122,6 @@ struct ShoulderCap: View {
                         UIImpactFeedbackGenerator(style: .soft).impactOccurred()
                     }
             )
-    }
-}
-
-// MARK: - D-pad
-
-struct RefDPad: View {
-    @State private var held = false
-
-    var body: some View {
-        GeometryReader { geo in
-            let s = min(geo.size.width, geo.size.height)
-            ZStack {
-                RoundedRectangle(cornerRadius: s * 0.18)
-                    .fill(Color.white.opacity(0.9))
-                    .frame(width: s * 0.30, height: s)
-                RoundedRectangle(cornerRadius: s * 0.18)
-                    .fill(Color.white.opacity(0.9))
-                    .frame(width: s, height: s * 0.30)
-                Circle()
-                    .fill(Color.white.opacity(0.9))
-                    .frame(width: s * 0.22, height: s * 0.22)
-            }
-            .frame(width: s, height: s)
-            .scaleEffect(held ? 0.96 : 1)
-            .animation(.spring(response: 0.14, dampingFraction: 0.7), value: held)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { v in
-                        held = true
-                        let c = CGPoint(x: s / 2, y: s / 2)
-                        let dx = v.location.x - c.x
-                        let dy = v.location.y - c.y
-                        let dead: CGFloat = 10
-                        let ib = InputBridge.shared
-                        ib.set(InputBridge.UP, pressed: dy < -dead)
-                        ib.set(InputBridge.DOWN, pressed: dy > dead)
-                        ib.set(InputBridge.LEFT, pressed: dx < -dead)
-                        ib.set(InputBridge.RIGHT, pressed: dx > dead)
-                    }
-                    .onEnded { _ in
-                        held = false
-                        let ib = InputBridge.shared
-                        ib.set(InputBridge.UP, pressed: false)
-                        ib.set(InputBridge.DOWN, pressed: false)
-                        ib.set(InputBridge.LEFT, pressed: false)
-                        ib.set(InputBridge.RIGHT, pressed: false)
-                    }
-            )
-        }
     }
 }
 
@@ -217,7 +167,7 @@ struct FaceButton: View {
     }
 }
 
-// MARK: - Stick
+// MARK: - Stick (dark on white bg — matches reference)
 
 struct RefStick: View {
     @Binding var offset: CGSize
@@ -228,11 +178,11 @@ struct RefStick: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(Color.white.opacity(0.35), lineWidth: size * 0.11)
-                .background(Circle().fill(Color.white.opacity(0.12)))
+                .stroke(Color(white: 0.72), lineWidth: size * 0.11)
+                .background(Circle().fill(Color(white: 0.92)))
                 .frame(width: size, height: size)
             Circle()
-                .fill(Color.white.opacity(0.9))
+                .fill(Color.black)
                 .frame(width: knob, height: knob)
                 .offset(offset)
                 .gesture(
@@ -261,7 +211,7 @@ struct PressPopStyle: ButtonStyle {
     }
 }
 
-// MARK: - In-panel browser
+// MARK: - In-panel browser (legacy small)
 
 struct InPanelBrowser: View {
     @EnvironmentObject var appState: AppState
