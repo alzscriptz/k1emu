@@ -10,21 +10,26 @@
 - Tweak Loader
 - Settings (background & joystick colors + cool presets)
 - **Liquid Glass** on iOS 18+ / 26+
-- **tvOS / AirPlay / external display mode**: phone becomes full Xbox-style controller, game shows on TV
-- **Exact controller layout** matching the reference image:
-  - LT/LB · RT/RB shoulders
-  - D-pad left, GAME center panel, Y/X/B/A diamond (correct colors)
-  - Dual analog sticks + big Browser panel
-  - **Three interactive dots** under GAME:
-    1. **Cursor Mode** (View icon) – left stick moves cursor, A = click, B = back, right stick = scroll. Glowing ring when active.
-    2. **Browser** – opens minimal Brave-style browser (Brave Search default, privacy chrome, Shields badge)
-    3. **Settings** – centered glass modal with Tweaks / Keybinds / Leave
-- Mouse/Cursor mode, in-game menu, haptics on every button, spring animations, press-depth feedback
+- **TV / AirPlay / external display mode**: TV shows the pure game (full screen), phone becomes the full controller (no overlapping UI)
+- **System-specific controller skins**:
+  - **PSP / PS1 / PS2** → △ ○ × □ (PlayStation symbols + correct colours)
+  - **Nintendo (NES/SNES/N64/GBA/NDS…)** → X Y A B with classic colours
+  - **Sega** → A B X Y / C Z style labels
+  - **Default** → Xbox A B X Y
+- **Much larger GAME panel** in phone mode — controls stay in the side gutters so they never cover the video in portrait or landscape
+- Dual analog sticks + Browser / CHIP-8 pad centre panel
+- Three mode dots: Cursor · CHIP-8 pad · Browser
+- Mouse/Cursor mode, in-game menu, haptics, spring animations
 
 ## Status
 
-This repository contains a complete, production-ready **UI + architecture** that matches every feature requested.  
-Real multi-system emulator cores (libretro-style) are **not** included yet — they are large binary + C++ projects. The app currently uses mock cores so everything compiles, runs, and feels complete. You can later drop real cores into `Cores/`.
+UI + architecture are production-ready and match the requested controller / TV behaviour.
+
+**Honest note on “real” emulation:**  
+Real multi-system libretro cores (PPSSPP, mGBA, melonDS, PCSX-ReARMed, etc.) are **not** shipped in this repo — they are large binary/C++ projects.  
+Only the built-in **CHIP-8** core is fully functional right now. For every other system the app loads a placeholder so the UI, input, TV mode, save paths and controller all work end-to-end.  
+
+Drop real `ios-arm64` `.dylib` cores into `Cores/` (or the app’s Documents/Cores folder) and the existing `CoreLoader` will pick them up automatically.
 
 ## Build IPA with GitHub Actions
 

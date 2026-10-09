@@ -49,10 +49,15 @@ final class InputBridge {
 
     static func faceId(_ label: String) -> UInt32? {
         switch label.uppercased() {
-        case "A": return A
-        case "B": return B
-        case "X": return X
-        case "Y": return Y
+        case "A", "CROSS", "×", "XBOXA": return A
+        case "B", "CIRCLE", "○", "XBOXB": return B
+        case "X", "SQUARE", "□", "XBOXX": return X
+        case "Y", "TRIANGLE", "△", "XBOXY": return Y
+        // Nintendo-style aliases (common on SNES/N64 overlays)
+        case "SNESA": return A
+        case "SNESB": return B
+        case "SNESX": return X
+        case "SNESY": return Y
         default: return nil
         }
     }
