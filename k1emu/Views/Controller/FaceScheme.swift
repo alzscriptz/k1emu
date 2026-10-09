@@ -27,7 +27,7 @@ struct FaceScheme {
                 l1Label: "L", l2Label: "L2", r1Label: "R", r2Label: "R2"
             )
         }
-        if ["NDS", "3DS", "GBA", "GB", "GBC", "NES", "SNES", "N64"].contains(where: { s.contains($0) }) {
+        if ["NDS", "3DS", "GBA", "GB", "GBC", "NES", "SNES", "N64", "GC", "WII", "GAMECUBE"].contains(where: { s.contains($0) }) {
             return FaceScheme(
                 north: "X", west: "Y", east: "A", south: "B",
                 northColor: Color(red: 0.35, green: 0.55, blue: 0.95),
@@ -47,6 +47,7 @@ struct FaceScheme {
                 l1Label: "X", l2Label: "Z", r1Label: "Y", r2Label: "C"
             )
         }
+        // Default = reference mockup colors (Y/X/B/A)
         return FaceScheme(
             north: "Y", west: "X", east: "B", south: "A",
             northColor: Color(red: 1.0, green: 0.84, blue: 0.2),
