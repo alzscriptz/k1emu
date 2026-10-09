@@ -2,6 +2,20 @@ name: Release IPA
 
 on:
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "Branch or commit to build"
+        required: true
+        default: "audit/real-emulation-and-gameplay"
+        type: string
+      release_tag:
+        description: "New GitHub release tag (must not already exist)"
+        required: true
+        default: "v2.6.0"
+        type: string
+  push:
+    tags:
+      - "v*"
 
 permissions:
   contents: write
@@ -9,10 +23,12 @@ permissions:
 jobs:
   package:
     runs-on: macos-latest
-    timeout-minutes: 45
-
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
 
       - name: Select Xcode
         run: |
@@ -22,12 +38,12 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Generate + Build + Package
-        run: |
-          set -euxo pipefail
-          xcodegen generate
-          mkdir -p build
+      - name: Generate Xcode project
+        run: xcodegen generate
 
+      - name: Build unsigned iOS app
+        run: |
+          set -euo pipefail
           xcodebuild \
             -project k1emu.xcodeproj \
             -scheme k1emu \
@@ -39,26 +55,41 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             ONLY_ACTIVE_ARCH=NO
 
-          APP=$(find build/DerivedData -name "k1emu.app" -type d | head -n 1)
-          echo "APP=$APP"
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP="$(find build/DerivedData -name 'k1emu.app' -type d -print -quit)"
           test -n "$APP"
-
+          rm -rf Payload k1emu.ipa
           mkdir -p Payload
           cp -R "$APP" Payload/
-          mkdir -p "Payload/k1emu.app/Frameworks"
-          find Cores -name "*.dylib" -exec cp {} "Payload/k1emu.app/Frameworks/" \; 2>/dev/null || true
-
+          if [ -d Cores ]; then
+            mkdir -p Payload/k1emu.app/Frameworks
+            find Cores -name '*.dylib' -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
+          fi
           (cd Payload && zip -qr ../k1emu.ipa .)
-          ls -lah k1emu.ipa
+          test -s k1emu.ipa
+          shasum -a 256 k1emu.ipa
 
-      - name: Upload release
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k1emu-ipa-${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+          path: k1emu.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish IPA to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.9.0
-          name: k1emu v1.9.0
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+          name: K1emu ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
           body: |
-            Real Xcode-built unsigned IPA.
-            Sideload with AltStore / SideStore / TrollStore.
+            K1emu unsigned iOS build.
+
+            - The IPA is unsigned and may need signing with AltStore, SideStore, or Sideloadly before installation.
+            - A successful build does not guarantee every console or ROM is compatible.
+            - Controller layouts and inputs should be tested with actual games and cores.
           files: k1emu.ipa
           fail_on_unmatched_files: true
         env:
