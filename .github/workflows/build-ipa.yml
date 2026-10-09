@@ -126,6 +126,12 @@ jobs:
 
           zip -qr k1emu.ipa Payload
           ls -lah k1emu.ipa
+          SIZE=$(stat -f%z k1emu.ipa 2>/dev/null || stat -c%s k1emu.ipa)
+          echo "IPA size bytes: $SIZE"
+          if [ "$SIZE" -lt 10000000 ]; then
+            echo "ERROR: IPA is only $SIZE bytes — cores missing. Aborting."
+            exit 1
+          fi
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -133,22 +139,3 @@ jobs:
           name: k1emu-ipa
           path: k1emu.ipa
           retention-days: 14
-
-      - name: Create / Update Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v2.5.2
-          name: k1emu v2.5.2 — clean GAME, cursor, CHIP-8 pad
-          body: |
-            - GAME panel is pure video (nothing on top of it)
-            - Controls spaced apart (no clustered buttons)
-            - Removed − / + under GAME
-            - Three dots: **cursor mode** · **CHIP-8 hex pad** · **browser**
-            - CHIP-8 keypad is 1–F game keys (not a text keyboard)
-
-            Install with LiveContainer / AltStore / SideStore / TrollStore.
-          files: k1emu.ipa
-          make_latest: true
-          fail_on_unmatched_files: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

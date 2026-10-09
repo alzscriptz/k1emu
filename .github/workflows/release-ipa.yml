@@ -6,12 +6,12 @@ on:
       source_ref:
         description: "Branch or commit to build"
         required: true
-        default: "audit/real-emulation-and-gameplay"
+        default: "main"
         type: string
       release_tag:
-        description: "New GitHub release tag (must not already exist)"
+        description: "New GitHub release tag"
         required: true
-        default: "v2.6.0"
+        default: "v2.8.0"
         type: string
   push:
     tags:
@@ -38,6 +38,79 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Download libretro iOS-arm64 cores (buildbot nightly)
+        run: |
+          set -euxo pipefail
+          BASE="https://buildbot.libretro.com/nightly/apple/ios-arm64/latest"
+          mkdir -p Cores /tmp/corezips /tmp/coreextract
+
+          CORES=(
+            melondsds_libretro.dylib.zip
+            melonds_libretro_ios.dylib.zip
+            desmume_libretro_ios.dylib.zip
+            noods_libretro_ios.dylib.zip
+            mgba_libretro.dylib.zip
+            gpsp_libretro_ios.dylib.zip
+            vbam_libretro_ios.dylib.zip
+            vba_next_libretro_ios.dylib.zip
+            mednafen_gba_libretro_ios.dylib.zip
+            gambatte_libretro_ios.dylib.zip
+            sameboy_libretro_ios.dylib.zip
+            gearboy_libretro_ios.dylib.zip
+            fceumm_libretro_ios.dylib.zip
+            nestopia_libretro_ios.dylib.zip
+            quicknes_libretro_ios.dylib.zip
+            mesen_libretro_ios.dylib.zip
+            snes9x_libretro_ios.dylib.zip
+            snes9x2010_libretro_ios.dylib.zip
+            snes9x2005_plus_libretro_ios.dylib.zip
+            bsnes_libretro_ios.dylib.zip
+            mednafen_snes_libretro_ios.dylib.zip
+            mupen64plus_next_libretro_ios.dylib.zip
+            parallel_n64_libretro_ios.dylib.zip
+            genesis_plus_gx_libretro_ios.dylib.zip
+            picodrive_libretro_ios.dylib.zip
+            pcsx_rearmed_libretro_ios.dylib.zip
+            swanstation_libretro.dylib.zip
+            ppsspp_libretro.dylib.zip
+            flycast_libretro.dylib.zip
+            mednafen_vb_libretro_ios.dylib.zip
+            mednafen_wswan_libretro_ios.dylib.zip
+            pokemini_libretro_ios.dylib.zip
+          )
+
+          download_one() {
+            local z="$1"
+            if curl -fsSL --retry 3 --retry-delay 2 -o "/tmp/corezips/$z" "$BASE/$z"; then
+              unzip -o -q "/tmp/corezips/$z" -d /tmp/coreextract || true
+            else
+              echo "WARN: failed $z"
+            fi
+          }
+
+          for z in "${CORES[@]}"; do
+            download_one "$z" &
+            while [ "$(jobs -rp | wc -l)" -ge 8 ]; do sleep 0.5; done
+          done
+          wait
+
+          find /tmp/coreextract -type f -name "*.dylib" | while read -r f; do
+            base="$(basename "$f")"
+            norm="${base//_ios.dylib/.dylib}"
+            cp "$f" "Cores/$norm"
+            cp "$f" "Cores/$base"
+          done
+
+          [ -f Cores/melondsds_libretro.dylib ] && cp Cores/melondsds_libretro.dylib Cores/libnds.dylib || true
+          [ -f Cores/melonds_libretro.dylib ] && cp Cores/melonds_libretro.dylib Cores/melonds.dylib || true
+          [ -f Cores/mgba_libretro.dylib ] && cp Cores/mgba_libretro.dylib Cores/libgba.dylib || true
+          [ -f Cores/fceumm_libretro.dylib ] && cp Cores/fceumm_libretro.dylib Cores/libnes.dylib || true
+          [ -f Cores/snes9x_libretro.dylib ] && cp Cores/snes9x_libretro.dylib Cores/libsnes.dylib || true
+          [ -f Cores/gambatte_libretro.dylib ] && cp Cores/gambatte_libretro.dylib Cores/libgb.dylib || true
+
+          echo "Core count:"
+          ls Cores/*.dylib 2>/dev/null | wc -l
+
       - name: Generate Xcode project
         run: xcodegen generate
 
@@ -55,21 +128,30 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             ONLY_ACTIVE_ARCH=NO
 
-      - name: Package IPA
+      - name: Package IPA with cores (must be 40MB+)
         run: |
           set -euo pipefail
           APP="$(find build/DerivedData -name 'k1emu.app' -type d -print -quit)"
           test -n "$APP"
           rm -rf Payload k1emu.ipa
           mkdir -p Payload
-          cp -R "$APP" Payload/
-          if [ -d Cores ]; then
-            mkdir -p Payload/k1emu.app/Frameworks
-            find Cores -name '*.dylib' -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
+          cp -R "$APP" Payload/k1emu.app
+          mkdir -p Payload/k1emu.app/Frameworks
+          find Cores -name '*.dylib' -exec cp {} Payload/k1emu.app/Frameworks/ \; || true
+          FRAMEWORK_COUNT=$(ls Payload/k1emu.app/Frameworks/*.dylib 2>/dev/null | wc -l | tr -d ' ')
+          echo "Frameworks dylib count: $FRAMEWORK_COUNT"
+          zip -qr k1emu.ipa Payload
+          ls -lah k1emu.ipa
+          SIZE=$(stat -f%z k1emu.ipa 2>/dev/null || stat -c%s k1emu.ipa)
+          echo "IPA size bytes: $SIZE"
+          # Fail if IPA is tiny (no cores) — real build is ~40MB+
+          if [ "$SIZE" -lt 10000000 ]; then
+            echo "ERROR: IPA is only $SIZE bytes — cores missing. Aborting."
+            exit 1
           fi
-          (cd Payload && zip -qr ../k1emu.ipa .)
-          test -s k1emu.ipa
           shasum -a 256 k1emu.ipa
+          # Verify Payload structure
+          unzip -l k1emu.ipa | head -40
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
@@ -85,12 +167,15 @@ jobs:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
           name: K1emu ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
           body: |
-            K1emu unsigned iOS build.
+            **Full IPA with libretro cores (~47 MB).**
 
-            - The IPA is unsigned and may need signing with AltStore, SideStore, or Sideloadly before installation.
-            - A successful build does not guarantee every console or ROM is compatible.
-            - Controller layouts and inputs should be tested with actual games and cores.
+            - Contains `Payload/k1emu.app` + Frameworks (cores)
+            - Unsigned — install with LiveContainer / AltStore / SideStore / TrollStore
+            - If the file is under 1 MB it is broken; re-download from Actions artifact instead
+
+            Controller: white layout matching reference, system face buttons, cursor / browser / CHIP-8 dots, save/load slots.
           files: k1emu.ipa
           fail_on_unmatched_files: true
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
