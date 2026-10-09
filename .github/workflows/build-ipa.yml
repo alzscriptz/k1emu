@@ -61,6 +61,7 @@ jobs:
             swanstation_libretro.dylib.zip
             ppsspp_libretro.dylib.zip
             flycast_libretro.dylib.zip
+            dolphin_libretro.dylib.zip
             mednafen_vb_libretro_ios.dylib.zip
             mednafen_wswan_libretro_ios.dylib.zip
             pokemini_libretro_ios.dylib.zip
@@ -94,6 +95,7 @@ jobs:
           [ -f Cores/fceumm_libretro.dylib ] && cp Cores/fceumm_libretro.dylib Cores/libnes.dylib || true
           [ -f Cores/snes9x_libretro.dylib ] && cp Cores/snes9x_libretro.dylib Cores/libsnes.dylib || true
           [ -f Cores/gambatte_libretro.dylib ] && cp Cores/gambatte_libretro.dylib Cores/libgb.dylib || true
+          [ -f Cores/dolphin_libretro.dylib ] && cp Cores/dolphin_libretro.dylib Cores/dolphin.dylib || true
 
           ls Cores/*.dylib 2>/dev/null | wc -l
 
