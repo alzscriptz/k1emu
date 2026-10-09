@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import WebKit
 
-/// Controller UI. GAME panel is large; pixels fill it completely.
+/// Controller UI — normal GAME size; pixels fill the panel.
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -60,17 +60,17 @@ struct ControllerView: View {
     }
 
     private func layout(size: CGSize, landscape: Bool) -> some View {
-        let stickSize: CGFloat = landscape ? 78 : 86
-        let browserH: CGFloat = landscape ? 68 : 80
-        let sideW: CGFloat = landscape ? 84 : 90
-        let topBarH: CGFloat = 32
+        let stickSize: CGFloat = landscape ? 84 : 92
+        let browserH: CGFloat = landscape ? 64 : 72
+        let sideW: CGFloat = landscape ? 88 : 94
+        let topBarH: CGFloat = 36
 
-        // Maximize GAME box
-        let gameW = showGamePanel ? max(180, size.width - sideW * 2 - 8) : 0
-        let reservedBottom = browserH + stickSize + 32
-        let reservedTop = topBarH + 24
-        let maxGameH = max(200, size.height - reservedTop - reservedBottom)
-        let gameH = showGamePanel ? min(maxGameH, size.height * (landscape ? 0.55 : 0.50)) : 0
+        // Normal GAME size (not oversized)
+        let gameW = showGamePanel ? max(160, size.width - sideW * 2 - 12) : 0
+        let reservedBottom = browserH + stickSize + 40
+        let reservedTop = topBarH + 30
+        let maxGameH = max(160, size.height - reservedTop - reservedBottom)
+        let gameH = showGamePanel ? min(maxGameH, size.height * (landscape ? 0.42 : 0.40)) : 0
 
         return VStack(spacing: 0) {
             topBar
@@ -78,23 +78,23 @@ struct ControllerView: View {
                 .padding(.horizontal, 8)
 
             HStack {
-                VStack(spacing: 2) {
+                VStack(spacing: 3) {
                     shoulderButton("LT")
                     shoulderButton("LB")
                 }
                 Spacer()
-                VStack(spacing: 2) {
+                VStack(spacing: 3) {
                     shoulderButton("RT")
                     shoulderButton("RB")
                 }
             }
-            .padding(.horizontal, landscape ? 22 : 28)
-            .padding(.top, 1)
+            .padding(.horizontal, landscape ? 28 : 36)
+            .padding(.top, 2)
 
-            HStack(alignment: .center, spacing: 4) {
+            HStack(alignment: .center, spacing: 6) {
                 PhotoDPad()
-                    .frame(width: showGamePanel ? sideW - 4 : sideW + 10,
-                           height: showGamePanel ? sideW - 4 : sideW + 10)
+                    .frame(width: showGamePanel ? sideW - 4 : sideW + 8,
+                           height: showGamePanel ? sideW - 4 : sideW + 8)
 
                 if showGamePanel {
                     gameScreen
@@ -113,13 +113,13 @@ struct ControllerView: View {
                 }
 
                 PhotoFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor)
-                    .frame(width: showGamePanel ? sideW : sideW + 10,
-                           height: showGamePanel ? sideW : sideW + 10)
+                    .frame(width: showGamePanel ? sideW : sideW + 8,
+                           height: showGamePanel ? sideW : sideW + 8)
             }
-            .padding(.horizontal, 4)
-            .padding(.top, 2)
+            .padding(.horizontal, 6)
+            .padding(.top, 4)
 
-            HStack(spacing: 18) {
+            HStack(spacing: 20) {
                 holdDot(label: "−", id: InputBridge.SELECT)
                 DotButton(systemImage: "globe",
                           isActive: appState.showBrowserInPanel, activeColor: .cyan) {
@@ -128,9 +128,9 @@ struct ControllerView: View {
                 }
                 holdDot(label: "+", id: InputBridge.START)
             }
-            .padding(.top, 4)
+            .padding(.top, 6)
 
-            Spacer(minLength: 2)
+            Spacer(minLength: 4)
 
             HStack(alignment: .center, spacing: 8) {
                 PhotoStick(offset: $leftStick, size: stickSize)
@@ -142,7 +142,7 @@ struct ControllerView: View {
                 PhotoStick(offset: $rightStick, size: stickSize)
             }
             .padding(.horizontal, 10)
-            .padding(.bottom, 6)
+            .padding(.bottom, 8)
         }
         .frame(width: size.width, height: size.height, alignment: .top)
     }
@@ -177,14 +177,13 @@ struct ControllerView: View {
             Image(systemName: systemName)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color.black.opacity(0.85))
-                .frame(width: 32, height: 32)
+                .frame(width: 34, height: 34)
                 .background(Circle().fill(Color.black.opacity(0.06)))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
     }
 
-    /// Black GAME bezel — content is edge-to-edge inside (no inner padding).
     private var gameScreen: some View {
         ZStack {
             Color.black
@@ -469,7 +468,7 @@ struct PhotoFaceButtons: View {
 
 struct PhotoStick: View {
     @Binding var offset: CGSize
-    var size: CGFloat = 86
+    var size: CGFloat = 92
     private var maxTravel: CGFloat { size * 0.22 }
     private var knob: CGFloat { size * 0.58 }
 

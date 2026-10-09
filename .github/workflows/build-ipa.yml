@@ -137,12 +137,11 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.4.9
-          name: k1emu v2.4.9 — GAME truly fills (UIKit aspectFill)
+          tag_name: v2.5.0
+          name: k1emu v2.5.0 — normal GAME size + fill fix only
           body: |
-            - **UIKit UIImageView scaleAspectFill** so pixels cover the entire GAME panel (no black bars)
-            - Larger GAME box (~55% height in landscape)
-            - No inner padding around the video
+            - GAME panel back to **normal size** (not oversized)
+            - Pixels still **fill** the GAME panel (UIKit aspectFill)
 
             Install with LiveContainer / AltStore / SideStore / TrollStore.
           files: k1emu.ipa
