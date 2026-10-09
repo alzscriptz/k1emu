@@ -1,155 +1,114 @@
 import Foundation
-import Combine
 
-@MainActor
 final class ROMLibrary: ObservableObject {
-    @Published var games: [GameItem] = []
-    @Published var lastError: String?
+    static let shared = ROMLibrary()
 
-    private let fm = FileManager.default
-    private let libraryURL: URL
-    private let romsDirectory: URL
+    @Published private(set) var games: [GameItem] = []
 
-    init() {
-        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        libraryURL = docs.appendingPathComponent("library.json")
-        romsDirectory = docs.appendingPathComponent("ROMs", isDirectory: true)
-        try? fm.createDirectory(at: romsDirectory, withIntermediateDirectories: true)
-        try? fm.removeItem(at: romsDirectory.appendingPathComponent("IBM_Logo.ch8"))
-        load()
-        scanDocumentsForROMs()
+    private var romsDir: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ROMs", isDirectory: true)
     }
 
-    func load() {
-        guard let data = try? Data(contentsOf: libraryURL),
-              let decoded = try? JSONDecoder().decode([GameItem].self, from: data) else {
+    init() {
+        try? FileManager.default.createDirectory(at: romsDir, withIntermediateDirectories: true)
+        refresh()
+    }
+
+    func refresh() {
+        var items: [GameItem] = []
+        guard let files = try? FileManager.default.contentsOfDirectory(at: romsDir, includingPropertiesForKeys: nil) else {
             games = []
             return
         }
-        games = decoded.filter { $0.fileExists && $0.fileName != "IBM_Logo.ch8" }
-        if games.count != decoded.count { save() }
+        for url in files {
+            let ext = url.pathExtension.lowercased()
+            guard Self.detectSystem(ext: ext) != nil || ["zip", "7z", "rar"].contains(ext) else { continue }
+            let name = url.deletingPathExtension().lastPathComponent
+            let system = Self.detectSystem(ext: ext) ?? "UNKNOWN"
+            items.append(GameItem(name: name, system: system, fileName: url.lastPathComponent))
+        }
+        games = items.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    func save() {
-        guard let data = try? JSONEncoder().encode(games) else { return }
-        try? data.write(to: libraryURL, options: .atomic)
-    }
-
-    @discardableResult
     func importFile(from source: URL, name: String?, system: String) -> GameItem? {
-        lastError = nil
         let accessed = source.startAccessingSecurityScopedResource()
         defer { if accessed { source.stopAccessingSecurityScopedResource() } }
-
+        var readURL = source
+        var coordinatorError: NSError?
+        let coordinator = NSFileCoordinator()
         var result: GameItem?
-        var coordError: NSError?
-        NSFileCoordinator().coordinate(readingItemAt: source, options: [], error: &coordError) { readURL in
+        coordinator.coordinate(readingItemAt: source, options: [], error: &coordinatorError) { url in
+            readURL = url
             result = self.copyImported(readURL, name: name, system: system)
         }
-        if let coordError {
-            lastError = coordError.localizedDescription
+        if result == nil, coordinatorError == nil {
+            result = copyImported(source, name: name, system: system)
         }
+        refresh()
         return result
     }
 
     private func copyImported(_ url: URL, name: String?, system: String) -> GameItem? {
-        let safeName = sanitize(url.lastPathComponent)
-        let dest = romsDirectory.appendingPathComponent(safeName)
         do {
-            if fm.fileExists(atPath: dest.path) {
-                try fm.removeItem(at: dest)
+            let safeName = url.lastPathComponent
+            let dest = romsDir.appendingPathComponent(safeName)
+            if FileManager.default.fileExists(atPath: dest.path) {
+                try FileManager.default.removeItem(at: dest)
             }
-            try fm.copyItem(at: url, to: dest)
-            let display = name?.isEmpty == false ? name! : url.deletingPathExtension().lastPathComponent
+            try FileManager.default.copyItem(at: url, to: dest)
+            let display = name ?? url.deletingPathExtension().lastPathComponent
             let sys = system.isEmpty ? (Self.detectSystem(ext: url.pathExtension) ?? "UNKNOWN") : system
             let game = GameItem(name: display, system: sys, fileName: safeName)
-            games.removeAll { $0.fileName == safeName }
-            games.insert(game, at: 0)
-            save()
             return game
         } catch {
-            lastError = error.localizedDescription
             return nil
         }
     }
 
     func addFromURL(_ urlString: String, name: String?, system: String) async throws -> GameItem {
-        guard let url = URL(string: urlString) else {
-            throw NSError(domain: "ROMLibrary", code: 1, userInfo: [NSLocalizedDescriptionKey: "Bad URL"])
-        }
-        let (data, _) = try await URLSession.shared.data(from: url)
-        let fileName = sanitize(url.lastPathComponent)
-        let dest = romsDirectory.appendingPathComponent(fileName)
+        guard let remote = URL(string: urlString) else { throw URLError(.badURL) }
+        let (data, _) = try await URLSession.shared.data(from: remote)
+        let fileName = remote.lastPathComponent.isEmpty ? "rom.bin" : remote.lastPathComponent
+        let dest = romsDir.appendingPathComponent(fileName)
         try data.write(to: dest)
-        let display = name?.isEmpty == false ? name! : url.deletingPathExtension().lastPathComponent
-        let sys = system.isEmpty ? (Self.detectSystem(ext: url.pathExtension) ?? "UNKNOWN") : system
+        let display = name ?? remote.deletingPathExtension().lastPathComponent
+        let sys = system.isEmpty ? (Self.detectSystem(ext: remote.pathExtension) ?? "UNKNOWN") : system
         let game = GameItem(name: display, system: sys, fileName: fileName)
-        await MainActor.run {
-            self.games.removeAll { $0.fileName == fileName }
-            self.games.insert(game, at: 0)
-            self.save()
-        }
+        await MainActor.run { refresh() }
         return game
     }
 
-    func scanDocumentsForROMs() {
-        guard let files = try? fm.contentsOfDirectory(at: romsDirectory, includingPropertiesForKeys: nil) else { return }
-        var changed = false
-        for file in files {
-            let name = file.lastPathComponent
-            if name == "IBM_Logo.ch8" {
-                try? fm.removeItem(at: file)
-                continue
-            }
-            let ext = file.pathExtension.lowercased()
-            guard Self.detectSystem(ext: ext) != nil || ["zip", "7z", "rar"].contains(ext) else { continue }
-            if games.contains(where: { $0.fileName == name }) { continue }
-            let system = Self.detectSystem(ext: ext) ?? "UNKNOWN"
-            let title = file.deletingPathExtension().lastPathComponent
-            games.insert(GameItem(name: title, system: system, fileName: name), at: 0)
-            changed = true
-        }
-        games.removeAll { $0.fileName == "IBM_Logo.ch8" || !$0.fileExists }
-        if changed { save() }
-    }
-
-    func markPlayed(_ game: GameItem) {
-        guard let idx = games.firstIndex(where: { $0.id == game.id }) else { return }
-        games[idx].lastPlayed = Date()
-        games[idx].playCount += 1
-        save()
-    }
-
     func delete(_ game: GameItem) {
-        try? fm.removeItem(at: game.fileURL)
-        games.removeAll { $0.id == game.id }
-        save()
+        let url = romsDir.appendingPathComponent(game.fileName)
+        try? FileManager.default.removeItem(at: url)
+        refresh()
     }
 
-    func update(_ game: GameItem) {
-        if let idx = games.firstIndex(where: { $0.id == game.id }) {
-            games[idx] = game
-            save()
-        }
-    }
-
-    private func sanitize(_ name: String) -> String {
-        let invalid = CharacterSet(charactersIn: "/:\\?%*|\"<>")
-        return name.components(separatedBy: invalid).joined(separator: "_")
+    func path(for game: GameItem) -> URL {
+        romsDir.appendingPathComponent(game.fileName)
     }
 
     static func detectSystem(ext: String) -> String? {
         switch ext.lowercased() {
-        case "nds", "dsi": return "NDS"
+        case "nds", "dsi", "ids": return "NDS"
         case "gba": return "GBA"
-        case "gb", "gbc": return "GB"
-        case "nes", "fds": return "NES"
+        case "gb": return "GB"
+        case "gbc": return "GBC"
+        case "nes", "fds", "unf": return "NES"
         case "sfc", "smc": return "SNES"
         case "n64", "z64", "v64": return "N64"
         case "ch8", "c8": return "CHIP8"
-        case "md", "gen", "smd": return "GEN"
+        case "md", "gen", "smd": return "Genesis"
         case "sms", "gg": return "SMS"
-        case "iso", "bin", "cue", "chd", "pbp": return "DISC"
+        case "cue", "pbp", "chd": return "PS1"
+        case "iso", "cso": return "PSP"
+        case "gcm", "gcz", "tgc": return "GC"
+        case "wbfs", "wad", "rvz", "wia": return "WII"
+        case "gdi", "cdi": return "DC"
+        case "vb": return "VB"
+        case "ws", "wsc": return "WS"
+        case "min": return "POKEMINI"
         default: return nil
         }
     }
