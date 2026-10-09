@@ -137,12 +137,12 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.4.3
-          name: k1emu v2.4.3 — landscape top bar fixed
+          tag_name: v2.4.4
+          name: k1emu v2.4.4 — GAME taller + narrower (fills window)
           body: |
-            - Menu / TV / Close always visible in landscape (darker icons + fixed top bar height)
-            - Landscape-aware spacing for GAME, sticks, browser
-            - Full game frame (aspect-fit, no zoom crop)
+            - GAME panel is **taller** and **narrower** so dual-screen fills the black box
+            - Sized from framebuffer aspect (height-first)
+            - Menu / TV / Close visible in landscape
             - Controls: D-pad, ABXY, shoulders, Start/Select
 
             Install with LiveContainer / AltStore / SideStore / TrollStore.
