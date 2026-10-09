@@ -64,10 +64,10 @@ final class InputBridge {
 
     static func shoulderId(_ label: String) -> UInt32? {
         switch label.uppercased() {
-        case "LB", "L": return L
-        case "RB", "R": return R
-        case "LT", "L2": return L2
-        case "RT", "R2": return R2
+        case "LB", "L", "ZL": return L
+        case "RB", "R", "ZR": return R
+        case "LT", "L2", "Z": return L2
+        case "RT", "R2", "C": return R2
         default: return nil
         }
     }
