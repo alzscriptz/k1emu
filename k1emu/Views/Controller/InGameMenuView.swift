@@ -6,13 +6,13 @@ struct InGameMenuView: View {
     @EnvironmentObject var settings: SettingsStore
     @EnvironmentObject var tweakStore: TweakStore
 
-    @State private var selectedSection: MenuSection = .save
+    @State private var selectedSection: MenuSection = .play
     @State private var saveStatus: String = ""
 
     enum MenuSection: String, CaseIterable {
+        case play = "Play"
         case save = "Save"
         case tweaks = "Tweaks"
-        case speed = "Speed"
         case quit = "Quit"
     }
 
@@ -47,13 +47,13 @@ struct InGameMenuView: View {
 
                 Group {
                     switch selectedSection {
+                    case .play: playSection
                     case .save: saveSection
                     case .tweaks: tweaksSection
-                    case .speed: speedSection
                     case .quit: quitSection
                     }
                 }
-                .frame(maxHeight: 320)
+                .frame(maxHeight: 340)
             }
             .background(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -61,6 +61,57 @@ struct InGameMenuView: View {
             )
             .padding(28)
             .frame(maxWidth: 420)
+        }
+    }
+
+    private var playSection: some View {
+        VStack(spacing: 16) {
+            Text("Gameplay").font(.headline).padding(.top, 8)
+
+            // Reset
+            Button {
+                CoreLoader.shared.reset()
+                Chip8Core.shared.reset()
+                saveStatus = "Game reset"
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            } label: {
+                Label("Reset Game", systemImage: "arrow.counterclockwise")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.orange.opacity(0.85), in: RoundedRectangle(cornerRadius: 12))
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal)
+
+            // Speed / Fast-forward
+            Text("Speed").font(.subheadline.bold()).foregroundStyle(.secondary)
+            HStack(spacing: 10) {
+                ForEach([0.5, 1.0, 1.5, 2.0, 3.0], id: \.self) { speed in
+                    Button {
+                        appState.gameplaySpeed = speed
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    } label: {
+                        Text(speed == 1.0 ? "1x" : String(format: "%.1fx", speed))
+                            .font(.subheadline.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(
+                                appState.gameplaySpeed == speed
+                                ? settings.accentColor
+                                : Color.white.opacity(0.12),
+                                in: RoundedRectangle(cornerRadius: 10)
+                            )
+                            .foregroundStyle(appState.gameplaySpeed == speed ? .white : .primary)
+                    }
+                }
+            }
+            .padding(.horizontal)
+
+            if !saveStatus.isEmpty {
+                Text(saveStatus).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
         }
     }
 
@@ -75,9 +126,7 @@ struct InGameMenuView: View {
                     VStack(spacing: 8) {
                         Text("Slot \(slot)")
                             .font(.caption.bold())
-                        Button {
-                            saveSlot(slot)
-                        } label: {
+                        Button { saveSlot(slot) } label: {
                             Text("Save")
                                 .font(.subheadline.bold())
                                 .frame(maxWidth: .infinity)
@@ -85,9 +134,7 @@ struct InGameMenuView: View {
                                 .background(Color.blue.opacity(0.85), in: RoundedRectangle(cornerRadius: 10))
                                 .foregroundStyle(.white)
                         }
-                        Button {
-                            loadSlot(slot)
-                        } label: {
+                        Button { loadSlot(slot) } label: {
                             Text("Load")
                                 .font(.subheadline.bold())
                                 .frame(maxWidth: .infinity)
@@ -115,6 +162,7 @@ struct InGameMenuView: View {
 
     private func saveSlot(_ slot: Int) {
         let dir = CoreLoader.shared.saveDirectory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let name = appState.currentGame?.fileName ?? "game"
         let url = dir.appendingPathComponent("\(name).slot\(slot).sav")
         let data = "k1emu-save-slot-\(slot)-\(Date().timeIntervalSince1970)".data(using: .utf8)!
@@ -158,33 +206,6 @@ struct InGameMenuView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-    }
-
-    private var speedSection: some View {
-        VStack(spacing: 16) {
-            Text("Gameplay Speed").font(.headline).padding(.top)
-            HStack(spacing: 12) {
-                ForEach([0.5, 1.0, 1.5, 2.0], id: \.self) { speed in
-                    Button {
-                        appState.gameplaySpeed = speed
-                    } label: {
-                        Text(speed == 1.0 ? "1x" : String(format: "%.1fx", speed))
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(
-                                appState.gameplaySpeed == speed
-                                ? settings.accentColor
-                                : Color.white.opacity(0.1),
-                                in: RoundedRectangle(cornerRadius: 12)
-                            )
-                            .foregroundStyle(appState.gameplaySpeed == speed ? .white : .primary)
-                    }
-                }
-            }
-            .padding()
-            Spacer()
-        }
     }
 
     private var quitSection: some View {
