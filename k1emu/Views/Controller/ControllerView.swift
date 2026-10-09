@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import WebKit
 
-/// Controller UI — large GAME window again (wide + tall).
+/// Controller: GAME higher, browser taller, correct game aspect.
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -35,7 +35,6 @@ struct ControllerView: View {
                 let landscape = geo.size.width > geo.size.height
                 layout(size: geo.size, landscape: landscape)
             }
-            .padding(.top, 4)
 
             if appState.isMouseMode {
                 RoundedRectangle(cornerRadius: 16)
@@ -61,37 +60,40 @@ struct ControllerView: View {
     }
 
     private func layout(size: CGSize, landscape: Bool) -> some View {
-        let stickSize: CGFloat = landscape ? 84 : 92
-        let browserH: CGFloat = landscape ? 48 : 60
-        let sideW: CGFloat = landscape ? 88 : 94
-        let topBarH: CGFloat = 40
+        let stickSize: CGFloat = landscape ? 80 : 88
+        let browserH: CGFloat = landscape ? 72 : 88   // taller browser
+        let sideW: CGFloat = landscape ? 86 : 92
+        let topBarH: CGFloat = 34                     // compact top → GAME sits higher
 
-        // LARGE GAME window (like before) — wide between controls, ~half height
-        let gameW = max(160, size.width - sideW * 2 - 12)
-        let reserved = topBarH + browserH + stickSize + (landscape ? 60 : 76)
-        let maxGameH = max(200, size.height - reserved)
-        let gameH = min(maxGameH, size.height * (landscape ? 0.52 : 0.48))
+        let gameW = max(160, size.width - sideW * 2 - 10)
+        // Leave room for shoulders + dots + sticks + browser; push GAME up
+        let reservedBottom = browserH + stickSize + 36
+        let reservedTop = topBarH + 28               // shoulders under top bar
+        let maxGameH = max(180, size.height - reservedTop - reservedBottom)
+        let gameH = min(maxGameH, size.height * (landscape ? 0.48 : 0.44))
 
         return VStack(spacing: 0) {
             topBar
                 .frame(height: topBarH)
                 .padding(.horizontal, 8)
 
+            // Shoulders tight under top bar
             HStack {
-                VStack(spacing: 3) {
+                VStack(spacing: 2) {
                     shoulderButton("LT")
                     shoulderButton("LB")
                 }
                 Spacer()
-                VStack(spacing: 3) {
+                VStack(spacing: 2) {
                     shoulderButton("RT")
                     shoulderButton("RB")
                 }
             }
-            .padding(.horizontal, landscape ? 28 : 36)
-            .padding(.top, 2)
+            .padding(.horizontal, landscape ? 24 : 32)
+            .padding(.top, 1)
 
-            HStack(alignment: .center, spacing: 6) {
+            // GAME row — higher on screen
+            HStack(alignment: .center, spacing: 4) {
                 PhotoDPad()
                     .frame(width: sideW - 4, height: sideW - 4)
 
@@ -101,10 +103,11 @@ struct ControllerView: View {
                 PhotoFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor)
                     .frame(width: sideW, height: sideW)
             }
-            .padding(.horizontal, 6)
-            .padding(.top, 4)
+            .padding(.horizontal, 4)
+            .padding(.top, 2)
 
-            HStack(spacing: 20) {
+            // Select · browser dot · Start
+            HStack(spacing: 18) {
                 holdDot(label: "−", id: InputBridge.SELECT)
                 DotButton(systemImage: "globe",
                           isActive: appState.showBrowserInPanel, activeColor: .cyan) {
@@ -113,10 +116,11 @@ struct ControllerView: View {
                 }
                 holdDot(label: "+", id: InputBridge.START)
             }
-            .padding(.top, 6)
+            .padding(.top, 4)
 
             Spacer(minLength: 2)
 
+            // Sticks + taller browser
             HStack(alignment: .center, spacing: 8) {
                 PhotoStick(offset: $leftStick, size: stickSize)
 
@@ -160,9 +164,9 @@ struct ControllerView: View {
     private func topIconButton(systemName: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color.black.opacity(0.85))
-                .frame(width: 36, height: 36)
+                .frame(width: 32, height: 32)
                 .background(Circle().fill(Color.black.opacity(0.06)))
                 .contentShape(Circle())
         }
@@ -456,7 +460,7 @@ struct PhotoFaceButtons: View {
 
 struct PhotoStick: View {
     @Binding var offset: CGSize
-    var size: CGFloat = 92
+    var size: CGFloat = 88
     private var maxTravel: CGFloat { size * 0.22 }
     private var knob: CGFloat { size * 0.58 }
 
