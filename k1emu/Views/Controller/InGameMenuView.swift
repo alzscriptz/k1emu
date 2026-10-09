@@ -68,10 +68,8 @@ struct InGameMenuView: View {
         VStack(spacing: 16) {
             Text("Gameplay").font(.headline).padding(.top, 8)
 
-            // Reset
             Button {
                 CoreLoader.shared.reset()
-                Chip8Core.shared.reset()
                 saveStatus = "Game reset"
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             } label: {
@@ -84,7 +82,6 @@ struct InGameMenuView: View {
             }
             .padding(.horizontal)
 
-            // Speed / Fast-forward
             Text("Speed").font(.subheadline.bold()).foregroundStyle(.secondary)
             HStack(spacing: 10) {
                 ForEach([0.5, 1.0, 1.5, 2.0, 3.0], id: \.self) { speed in
