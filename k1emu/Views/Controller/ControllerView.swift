@@ -31,9 +31,8 @@ struct ControllerView: View {
         appState.usingBuiltinCore || game.system.uppercased() == "CHIP8"
     }
 
-    /// Sony systems use PlayStation glyphs and the matching libretro face-button IDs.
-    private var isPlayStation: Bool {
-        ["PSP", "PS1", "PSX", "PLAYSTATION", "PLAYSTATION 1"].contains(game.system.uppercased())
+    private var controllerProfile: ControllerProfile {
+        ControllerProfile.forSystem(game.system, isChip8: isChip8)
     }
 
     var body: some View {
@@ -82,13 +81,17 @@ struct ControllerView: View {
             // Shoulders — spaced out to corners
             HStack {
                 VStack(spacing: 6) {
-                    ShoulderCap(label: "LT", color: shoulderFill)
-                    ShoulderCap(label: "LB", color: shoulderFill)
+                    if controllerProfile.hasShoulders {
+                        ShoulderCap(label: controllerProfile.leftTrigger, color: shoulderFill)
+                        ShoulderCap(label: controllerProfile.leftShoulder, color: shoulderFill)
+                    }
                 }
                 Spacer(minLength: 40)
                 VStack(spacing: 6) {
-                    ShoulderCap(label: "RT", color: shoulderFill)
-                    ShoulderCap(label: "RB", color: shoulderFill)
+                    if controllerProfile.hasShoulders {
+                        ShoulderCap(label: controllerProfile.rightTrigger, color: shoulderFill)
+                        ShoulderCap(label: controllerProfile.rightShoulder, color: shoulderFill)
+                    }
                 }
             }
             .padding(.horizontal, landscape ? 44 : 52)
@@ -104,7 +107,8 @@ struct ControllerView: View {
                 pureGameScreen
                     .frame(width: gameW, height: gameH)
 
-                RefFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor, radius: faceR, playStation: isPlayStation)
+                RefFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor,
+                               radius: faceR, profile: controllerProfile)
                     .frame(width: sideCtrl + 10, height: sideCtrl + 10)
             }
             .padding(.horizontal, gap)
@@ -156,13 +160,21 @@ struct ControllerView: View {
 
             // Sticks + center panel (Browser or CHIP-8 pad)
             HStack(alignment: .center, spacing: 14) {
-                RefStick(offset: $leftStick, size: stickSize)
+                if controllerProfile.hasAnalogSticks {
+                    RefStick(offset: $leftStick, size: stickSize)
+                } else {
+                    Spacer().frame(width: stickSize, height: stickSize)
+                }
 
                 centerPanel
                     .frame(maxWidth: .infinity)
                     .frame(height: bottomH)
 
-                RefStick(offset: $rightStick, size: stickSize)
+                if controllerProfile.hasRightStick {
+                    RefStick(offset: $rightStick, size: stickSize)
+                } else {
+                    Spacer().frame(width: stickSize, height: stickSize)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 12)
@@ -452,33 +464,82 @@ struct RefDPad: View {
 
 // MARK: - Face
 
+struct ControllerProfile {
+    let topLabel: String
+    let leftLabel: String
+    let rightLabel: String
+    let bottomLabel: String
+    let topInput: String
+    let leftInput: String
+    let rightInput: String
+    let bottomInput: String
+    let hasShoulders: Bool
+    let hasAnalogSticks: Bool
+    let hasRightStick: Bool
+    let leftShoulder: String
+    let rightShoulder: String
+    let leftTrigger: String
+    let rightTrigger: String
+
+    static func forSystem(_ system: String, isChip8: Bool = false) -> ControllerProfile {
+        let s = system.uppercased().replacingOccurrences(of: " ", with: "")
+        if ["PSP", "PS1", "PSX", "PLAYSTATION", "PLAYSTATION1"].contains(s) {
+            return ControllerProfile(topLabel: "△", leftLabel: "□", rightLabel: "○", bottomLabel: "×",
+                topInput: "X", leftInput: "Y", rightInput: "A", bottomInput: "B",
+                hasShoulders: true, hasAnalogSticks: true, hasRightStick: s != "PSP",
+                leftShoulder: "L", rightShoulder: "R", leftTrigger: "L", rightTrigger: "R")
+        }
+        if ["NES", "FAMICOM", "GB", "GBC", "GAMEBOY", "GAMEBOYCOLOR"].contains(s) {
+            return ControllerProfile(topLabel: "", leftLabel: "B", rightLabel: "A", bottomLabel: "",
+                topInput: "", leftInput: "B", rightInput: "A", bottomInput: "",
+                hasShoulders: false, hasAnalogSticks: false, hasRightStick: false,
+                leftShoulder: "", rightShoulder: "", leftTrigger: "", rightTrigger: "")
+        }
+        if s == "N64" {
+            return ControllerProfile(topLabel: "C↑", leftLabel: "B", rightLabel: "A", bottomLabel: "C↓",
+                topInput: "X", leftInput: "Y", rightInput: "A", bottomInput: "B",
+                hasShoulders: true, hasAnalogSticks: true, hasRightStick: false,
+                leftShoulder: "Z", rightShoulder: "R", leftTrigger: "L", rightTrigger: "R")
+        }
+        if ["GENESIS", "MEGADRIVE", "SMS", "GAMEGEAR"].contains(s) {
+            return ControllerProfile(topLabel: "", leftLabel: "B", rightLabel: "A", bottomLabel: "C",
+                topInput: "", leftInput: "B", rightInput: "A", bottomInput: "X",
+                hasShoulders: false, hasAnalogSticks: false, hasRightStick: false,
+                leftShoulder: "", rightShoulder: "", leftTrigger: "", rightTrigger: "")
+        }
+        if isChip8 || s == "CHIP8" {
+            return ControllerProfile(topLabel: "Y", leftLabel: "X", rightLabel: "B", bottomLabel: "A",
+                topInput: "Y", leftInput: "X", rightInput: "B", bottomInput: "A",
+                hasShoulders: false, hasAnalogSticks: false, hasRightStick: false,
+                leftShoulder: "", rightShoulder: "", leftTrigger: "", rightTrigger: "")
+        }
+        return ControllerProfile(topLabel: "Y", leftLabel: "X", rightLabel: "B", bottomLabel: "A",
+            topInput: "Y", leftInput: "X", rightInput: "B", bottomInput: "A",
+            hasShoulders: true, hasAnalogSticks: false, hasRightStick: false,
+            leftShoulder: "L", rightShoulder: "R", leftTrigger: "L2", rightTrigger: "R2")
+    }
+}
+
 struct RefFaceButtons: View {
     let y: Color, x: Color, b: Color, a: Color
     var radius: CGFloat = 18
-    var playStation: Bool = false
+    var profile: ControllerProfile
 
     var body: some View {
         let gap = radius * 2.2
         ZStack {
-            // Libretro's standard layout maps X to the top, Y to the left,
-            // A to the right, and B to the bottom. Sony glyphs follow the
-            // physical PSP / PlayStation button positions.
-            FaceButton(color: playStation ? x : y,
-                       label: playStation ? "△" : "Y",
-                       inputLabel: playStation ? "X" : "Y",
-                       radius: radius).offset(y: -gap)
-            FaceButton(color: playStation ? y : x,
-                       label: playStation ? "□" : "X",
-                       inputLabel: playStation ? "Y" : "X",
-                       radius: radius).offset(x: -gap)
-            FaceButton(color: playStation ? a : b,
-                       label: playStation ? "○" : "B",
-                       inputLabel: playStation ? "A" : "B",
-                       radius: radius).offset(x: gap)
-            FaceButton(color: playStation ? b : a,
-                       label: playStation ? "×" : "A",
-                       inputLabel: playStation ? "B" : "A",
-                       radius: radius).offset(y: gap)
+            if !profile.topLabel.isEmpty {
+                FaceButton(color: x, label: profile.topLabel, inputLabel: profile.topInput, radius: radius).offset(y: -gap)
+            }
+            if !profile.leftLabel.isEmpty {
+                FaceButton(color: y, label: profile.leftLabel, inputLabel: profile.leftInput, radius: radius).offset(x: -gap)
+            }
+            if !profile.rightLabel.isEmpty {
+                FaceButton(color: b, label: profile.rightLabel, inputLabel: profile.rightInput, radius: radius).offset(x: gap)
+            }
+            if !profile.bottomLabel.isEmpty {
+                FaceButton(color: a, label: profile.bottomLabel, inputLabel: profile.bottomInput, radius: radius).offset(y: gap)
+            }
         }
     }
 }
