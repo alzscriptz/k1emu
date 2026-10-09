@@ -1,66 +1,50 @@
 # k1emu
 
-**All-types ROMs emulator for iOS** with phone-as-controller + TV/AirPlay mode.
+**iOS ROM library and emulator frontend** with an experimental phone-as-controller + external-display mode.
 
-## Features
+## Current status — read before using
 
-- Beautiful main library + Install ROM (file / URL)
-- FAQ (`?`)
-- Long-press game actions (Info / Tweaks / Multitask / Delete)
-- Tweak Loader
-- Settings (background & joystick colors + cool presets)
-- **Liquid Glass** on iOS 18+ / 26+
-- **tvOS / AirPlay / external display mode**: phone becomes full Xbox-style controller, game shows on TV
-- **Exact controller layout** matching the reference image:
-  - LT/LB · RT/RB shoulders
-  - D-pad left, GAME center panel, Y/X/B/A diamond (correct colors)
-  - Dual analog sticks + big Browser panel
-  - **Three interactive dots** under GAME:
-    1. **Cursor Mode** (View icon) – left stick moves cursor, A = click, B = back, right stick = scroll. Glowing ring when active.
-    2. **Browser** – opens minimal Brave-style browser (Brave Search default, privacy chrome, Shields badge)
-    3. **Settings** – centered glass modal with Tweaks / Keybinds / Leave
-- Mouse/Cursor mode, in-game menu, haptics on every button, spring animations, press-depth feedback
+This project is a work in progress, not a complete multi-system emulator. A polished screen or a listed system does not mean that system is playable.
 
-## Status
+- A built-in CHIP-8 interpreter is present.
+- Other systems require a compatible, correctly built libretro core to be bundled with the app or installed in the app's Cores directory.
+- Core availability, ROM loading, audio, input mapping, save states, and system compatibility must be verified per core. Do not assume every ROM or system works.
+- The gameplay view should not report a fabricated FPS value. Performance must be measured from actual rendered frames and tested on a device.
+- External-display and controller UI features are not proof that the connected display, browser, tweaks, or every advertised action is fully functional.
 
-This repository contains a complete, production-ready **UI + architecture** that matches every feature requested.  
-Real multi-system emulator cores (libretro-style) are **not** included yet — they are large binary + C++ projects. The app currently uses mock cores so everything compiles, runs, and feels complete. You can later drop real cores into `Cores/`.
+## Gameplay
+
+- Immersive, edge-to-edge game viewport where a compatible core produces frames.
+- On-screen menu controls are hidden by default in the immersive play view and can be revealed by tapping.
+- Video scaling must be selected deliberately: aspect-fill uses the whole viewport but may crop edges; aspect-fit preserves the full frame but can leave unused space. The right choice depends on the game and system.
+- iOS safe areas, device rotation, touch input, and external display behavior need testing across supported devices and orientations.
+
+## Supported emulation
+
+The built-in CHIP-8 core is the only in-repository standalone interpreter. Other systems depend on external libretro cores. The core loader's system map describes candidate core names; it is not a compatibility guarantee. Users must provide ROMs and any legally required system files themselves.
 
 ## Build IPA with GitHub Actions
 
-1. Go to **Actions** tab
-2. Run the workflow **Build IPA**
-3. Download the artifact `k1emu.ipa`
+1. Open the **Actions** tab.
+2. Run the **Build IPA** workflow.
+3. Download the generated artifact if the workflow succeeds.
 
-> For a properly signed IPA you must add your Apple Developer certificate + provisioning profile as repository secrets (`BUILD_CERTIFICATE_BASE64`, `P12_PASSWORD`, `BUILD_PROVISION_PROFILE_BASE64`, `KEYCHAIN_PASSWORD`).  
-> Without them the workflow still produces an unsigned IPA that you can resign locally with `codesign` / AltStore / Sideloadly / TrollStore etc.
+A properly signed IPA requires the appropriate Apple Developer certificate and provisioning profile secrets. An unsigned build must be signed through a suitable local workflow before installation.
 
-## Project Structure
+## Project structure
 
-```
-k1emu/
-├── k1emu/
-│   ├── App/
-│   ├── Models/
-│   ├── Views/
-│   │   ├── Main/
-│   │   ├── Emu/
-│   │   ├── Tweak/
-│   │   ├── Settings/
-│   │   ├── Controller/          ← photo-accurate layout + modes
-│   │   └── Components/
-│   ├── Services/
-│   └── Resources/
-├── Cores/                       ← drop ios-arm64 .dylib cores here
-├── .github/workflows/
-└── README.md
-```
+- `k1emu/App/` — application state and entry point
+- `k1emu/Models/` — library and settings models
+- `k1emu/Views/` — library, gameplay, controller, and settings UI
+- `k1emu/Services/` — core loading, framebuffer, input, and CHIP-8 interpreter
+- `Cores/` — instructions for supplying compatible core binaries
+- `.github/workflows/` — build and release workflows
 
 ## Requirements
 
 - Xcode 16+
-- iOS 17.0+ deployment target (Liquid Glass / advanced materials use iOS 18+ availability checks)
+- iOS 17.0+
 
 ## License
 
-Private – all rights reserved.
+Private — all rights reserved.
