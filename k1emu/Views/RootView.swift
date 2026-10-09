@@ -11,7 +11,7 @@ struct RootView: View {
 
             if appState.isPlaying, let game = appState.currentGame {
                 if appState.isTVModeActive {
-                    // PHONE = controller only (no GAME panel)
+                    // PHONE = pure controller (no GAME panel). TV = full game.
                     ControllerView(game: game, showGamePanel: false)
                         .onAppear {
                             ExternalDisplayManager.shared.startGameDisplay(
@@ -23,6 +23,7 @@ struct RootView: View {
                             ExternalDisplayManager.shared.stopGameDisplay()
                         }
                 } else {
+                    // Phone: larger GAME + system-specific controller, controls never cover video
                     ControllerView(game: game, showGamePanel: true)
                 }
             } else {
