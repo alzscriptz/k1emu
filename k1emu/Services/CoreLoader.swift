@@ -1,7 +1,7 @@
 import Foundation
 import Darwin
 
-/// Libretro host. melonDS requires info->data + size (ROM bytes in memory).
+/// Libretro host. NDS uses Direct Boot (no user BIOS required for App Store).
 @MainActor
 final class CoreLoader: ObservableObject {
     static let shared = CoreLoader()
@@ -151,10 +151,8 @@ final class CoreLoader: ObservableObject {
 
         let candidates = CoreLoader.systemCoreMap[key] ?? []
         let keywords = CoreLoader.systemScanKeywords[key] ?? [key.lowercased()]
-
         var lastDlError = ""
 
-        // 1) Preferred names
         for dir in searchDirs {
             for base in candidates {
                 let url = dir.appendingPathComponent("\(base).dylib")
@@ -169,7 +167,6 @@ final class CoreLoader: ObservableObject {
             }
         }
 
-        // 2) Fuzzy scan Frameworks / Documents/Cores
         for dir in searchDirs {
             guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil) else { continue }
             for f in files where f.pathExtension == "dylib" {
@@ -187,8 +184,8 @@ final class CoreLoader: ObservableObject {
 
         let found = triedPaths.filter { FileManager.default.fileExists(atPath: $0) }
         lastError = found.isEmpty
-            ? "No dylib for \(system) — reinstall IPA with cores"
-            : "dlopen: \(lastDlError)"
+            ? "This system isn't available yet"
+            : "Couldn't start emulator (\(lastDlError))"
         return false
     }
 
@@ -223,7 +220,7 @@ final class CoreLoader: ObservableObject {
         sym_set_env = dlsym(h, "retro_set_environment")
 
         guard sym_api_version != nil, sym_init != nil else {
-            lastError = "Not libretro"
+            lastError = "Invalid core"
             dlclose(h); handle = nil
             return false
         }
@@ -267,15 +264,15 @@ final class CoreLoader: ObservableObject {
 
     func loadGame(path: String) -> Bool {
         guard isLibretro, let loadSym = sym_load_game else {
-            lastError = "No retro_load_game"
+            lastError = "Emulator not ready"
             return false
         }
         guard FileManager.default.fileExists(atPath: path) else {
-            lastError = "ROM missing"
+            lastError = "Game file not found"
             return false
         }
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)), !data.isEmpty else {
-            lastError = "Cannot read ROM"
+            lastError = "Couldn't read game file"
             return false
         }
 
@@ -304,12 +301,13 @@ final class CoreLoader: ObservableObject {
         }
 
         if !ok {
-            lastError = "retro_load_game failed — BIOS in Files→k1emu→system?"
+            // App Store safe message — never mention BIOS dumps
+            lastError = "Couldn't load this game. Try another file or core."
             romDataHolder = nil
             return false
         }
 
-        log("Game loaded")
+        log("Game loaded (direct boot)")
         startRunLoop()
         return true
     }
@@ -379,13 +377,14 @@ final class CoreLoader: ObservableObject {
     deinit { if let h = handle { dlclose(h) } }
 }
 
-// MARK: - C env / video
+// MARK: - C env / video (Direct Boot defaults — App Store, no user BIOS)
 
 private var g_systemDirPath = ""
 private var g_saveDirPath = ""
 private var g_systemDirCStr: UnsafeMutablePointer<CChar>?
 private var g_saveDirCStr: UnsafeMutablePointer<CChar>?
 private var g_useRGB565 = false
+private var g_varValueCStr: UnsafeMutablePointer<CChar>?
 
 private let ENV_GET_SYSTEM_DIRECTORY: UInt32 = 9
 private let ENV_SET_PIXEL_FORMAT: UInt32 = 10
@@ -398,6 +397,21 @@ private let ENV_SET_INPUT_DESCRIPTORS: UInt32 = 11
 private let ENV_SET_CONTROLLER_INFO: UInt32 = 35
 private let PIXEL_RGB565: Int32 = 2
 
+/// Core options forced for App Store: direct boot, no firmware menu.
+private let kCoreOptionDefaults: [String: String] = [
+    // legacy melonDS
+    "melonds_boot_directly": "enabled",
+    "melonds_console_mode": "DS",
+    "melonds_use_fw_settings": "disable",
+    // melonDS DS (JesseTG) — keys vary by version; set common ones
+    "melonds_ds_boot_mode": "direct",
+    "melonds_ds_console_mode": "ds",
+    "melondsds_boot_mode": "direct",
+    "melondsds_console_mode": "ds",
+    "melonds_firmware": "none",
+    "melonds_ds_firmware": "none"
+]
+
 private func updateCString(_ existing: inout UnsafeMutablePointer<CChar>?, _ path: String) -> UnsafePointer<CChar>? {
     existing?.deallocate()
     existing = nil
@@ -408,6 +422,12 @@ private func updateCString(_ existing: inout UnsafeMutablePointer<CChar>?, _ pat
     return UnsafePointer(p)
 }
 
+/// libretro_variable { key*, value* }
+private struct RetroVariable {
+    var key: UnsafePointer<CChar>?
+    var value: UnsafePointer<CChar>?
+}
+
 private func coreEnvironment(cmd: UInt32, data: UnsafeMutableRawPointer?) -> Bool {
     switch cmd {
     case ENV_SET_PIXEL_FORMAT:
@@ -416,26 +436,48 @@ private func coreEnvironment(cmd: UInt32, data: UnsafeMutableRawPointer?) -> Boo
             return true
         }
         return false
+
     case ENV_GET_SYSTEM_DIRECTORY:
         guard let data else { return false }
         let ptr = updateCString(&g_systemDirCStr, g_systemDirPath)
         data.assumingMemoryBound(to: UnsafePointer<CChar>?.self).pointee = ptr
         return ptr != nil
+
     case ENV_GET_SAVE_DIRECTORY:
         guard let data else { return false }
         let ptr = updateCString(&g_saveDirCStr, g_saveDirPath)
         data.assumingMemoryBound(to: UnsafePointer<CChar>?.self).pointee = ptr
         return ptr != nil
+
     case ENV_GET_CAN_DUPE:
         data?.assumingMemoryBound(to: Bool.self).pointee = true
         return true
+
     case ENV_GET_VARIABLE_UPDATE:
         data?.assumingMemoryBound(to: Bool.self).pointee = false
         return true
+
     case ENV_SET_VARIABLES, ENV_SET_INPUT_DESCRIPTORS, ENV_SET_CONTROLLER_INFO:
         return true
+
     case ENV_GET_VARIABLE:
-        return false
+        // Core asks for option value by key — return Direct Boot defaults
+        guard let data else { return false }
+        let v = data.assumingMemoryBound(to: RetroVariable.self)
+        guard let keyPtr = v.pointee.key else { return false }
+        let key = String(cString: keyPtr)
+        guard let value = kCoreOptionDefaults[key] else {
+            // Unknown option — leave value NULL, return false
+            return false
+        }
+        g_varValueCStr?.deallocate()
+        let utf = value.utf8CString
+        let p = UnsafeMutablePointer<CChar>.allocate(capacity: utf.count)
+        for (i, c) in utf.enumerated() { p[i] = c }
+        g_varValueCStr = p
+        v.pointee.value = UnsafePointer(p)
+        return true
+
     default:
         return false
     }
