@@ -39,6 +39,8 @@ extension CoreLoader {
         ],
         "PSP": ["ppsspp_libretro"],
         "DC": ["flycast_libretro"],
+        "GC": ["dolphin_libretro", "dolphin"],
+        "WII": ["dolphin_libretro", "dolphin"],
         "VB": ["mednafen_vb_libretro"],
         "WS": ["mednafen_wswan_libretro"],
         "POKEMINI": ["pokemini_libretro"],
@@ -59,6 +61,8 @@ extension CoreLoader {
         "PS1": ["pcsx", "swanstation", "mednafen_psx"],
         "PSP": ["ppsspp"],
         "DC": ["flycast"],
+        "GC": ["dolphin"],
+        "WII": ["dolphin"],
         "VB": ["mednafen_vb"],
         "WS": ["wswan"],
         "POKEMINI": ["pokemini"]
