@@ -2,8 +2,8 @@ import SwiftUI
 import UIKit
 import WebKit
 
-/// Controller: shoulders, D-pad · GAME · face, dots, sticks · Browser.
-/// GAME panel is tall so full NDS dual-screen fits without zoom-crop.
+/// Controller UI — works in portrait and landscape.
+/// Top bar (menu · title · TV · close) always visible.
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -28,7 +28,6 @@ struct ControllerView: View {
         (appState.usingBuiltinCore && chip8.isRunning) || (core.isRunning && fb.width > 0)
     }
 
-    /// Preferred aspect for current framebuffer (default NDS dual = 256/384).
     private var gameAspect: CGFloat {
         if fb.width > 0, fb.height > 0 {
             return CGFloat(fb.width) / CGFloat(fb.height)
@@ -39,9 +38,12 @@ struct ControllerView: View {
     var body: some View {
         ZStack {
             Color.white.ignoresSafeArea()
+
             GeometryReader { geo in
-                photoLayout(height: geo.size.height, width: geo.size.width)
+                let landscape = geo.size.width > geo.size.height
+                layout(size: geo.size, landscape: landscape)
             }
+            .padding(.top, 4)
 
             if appState.isMouseMode {
                 RoundedRectangle(cornerRadius: 16)
@@ -66,71 +68,44 @@ struct ControllerView: View {
         .onDisappear { InputBridge.shared.clearAll() }
     }
 
-    private func photoLayout(height: CGFloat, width: CGFloat) -> some View {
-        let stickSize: CGFloat = 92
-        let browserH: CGFloat = 64
-        let sideW: CGFloat = 96
-        // Max width for GAME between D-pad and face buttons
-        let gameW = max(120, width - sideW * 2 - 16)
-        // Height from aspect so FULL image fits (no crop): h = w / aspect
+    // MARK: - Layout
+
+    private func layout(size: CGSize, landscape: Bool) -> some View {
+        let stickSize: CGFloat = landscape ? 84 : 92
+        let browserH: CGFloat = landscape ? 52 : 64
+        let sideW: CGFloat = landscape ? 88 : 96
+        let topBarH: CGFloat = 40
+
+        // GAME box: maximize while keeping full aspect (no crop)
+        let gameW = max(100, size.width - sideW * 2 - 12)
         let idealH = gameW / gameAspect
-        // Cap so sticks/browser still fit
-        let maxH = height * 0.58
-        let gameH = min(max(idealH, 200), maxH)
+        let maxGameH = size.height - topBarH - browserH - stickSize - (landscape ? 70 : 90)
+        let gameH = min(max(idealH, landscape ? 160 : 200), max(maxGameH, 140))
 
         return VStack(spacing: 0) {
-            HStack {
-                Button {
-                    haptic(.light)
-                    appState.showInGameMenu = true
-                } label: {
-                    Image(systemName: "line.3.horizontal")
-                        .foregroundStyle(.black.opacity(0.4))
-                        .frame(width: 36, height: 36)
-                }
-                Spacer()
-                Text(game.name)
-                    .font(.caption2)
-                    .foregroundStyle(.black.opacity(0.35))
-                    .lineLimit(1)
-                Spacer()
-                Button {
-                    haptic(.medium)
-                    appState.isTVModeActive = true
-                } label: {
-                    Image(systemName: "tv")
-                        .foregroundStyle(.black.opacity(0.4))
-                        .frame(width: 36, height: 36)
-                }
-                Button {
-                    haptic(.medium)
-                    appState.quitGame()
-                } label: {
-                    Image(systemName: "xmark")
-                        .foregroundStyle(.black.opacity(0.4))
-                        .frame(width: 36, height: 36)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 2)
+            topBar
+                .frame(height: topBarH)
+                .padding(.horizontal, 8)
 
+            // Shoulders
             HStack {
-                VStack(spacing: 4) {
+                VStack(spacing: 3) {
                     shoulderButton("LT")
                     shoulderButton("LB")
                 }
                 Spacer()
-                VStack(spacing: 4) {
+                VStack(spacing: 3) {
                     shoulderButton("RT")
                     shoulderButton("RB")
                 }
             }
-            .padding(.horizontal, 36)
+            .padding(.horizontal, landscape ? 28 : 36)
             .padding(.top, 2)
 
+            // Main: D-pad · GAME · face
             HStack(alignment: .center, spacing: 4) {
                 PhotoDPad()
-                    .frame(width: sideW - 6, height: sideW - 6)
+                    .frame(width: sideW - 4, height: sideW - 4)
 
                 gameScreen
                     .frame(width: gameW, height: gameH)
@@ -138,10 +113,11 @@ struct ControllerView: View {
                 PhotoFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor)
                     .frame(width: sideW, height: sideW)
             }
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 4)
             .padding(.top, 4)
 
-            HStack(spacing: 22) {
+            // Select · Browser · Start
+            HStack(spacing: 20) {
                 holdDot(label: "−", id: InputBridge.SELECT)
                 DotButton(systemImage: "globe",
                           isActive: appState.showBrowserInPanel, activeColor: .cyan) {
@@ -154,6 +130,7 @@ struct ControllerView: View {
 
             Spacer(minLength: 2)
 
+            // Sticks + Browser
             HStack(alignment: .center, spacing: 8) {
                 PhotoStick(offset: $leftStick, size: stickSize)
 
@@ -164,9 +141,50 @@ struct ControllerView: View {
                 PhotoStick(offset: $rightStick, size: stickSize)
             }
             .padding(.horizontal, 10)
-            .padding(.bottom, 8)
+            .padding(.bottom, 6)
         }
-        .frame(width: width, height: height)
+        .frame(width: size.width, height: size.height, alignment: .top)
+    }
+
+    /// Menu · title · TV · close — high contrast so always readable in landscape
+    private var topBar: some View {
+        HStack(spacing: 8) {
+            topIconButton(systemName: "line.3.horizontal") {
+                haptic(.light)
+                appState.showInGameMenu = true
+            }
+
+            Text(game.name)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color.black.opacity(0.75))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity)
+
+            topIconButton(systemName: "tv") {
+                haptic(.medium)
+                appState.isTVModeActive = true
+            }
+
+            topIconButton(systemName: "xmark") {
+                haptic(.medium)
+                appState.quitGame()
+            }
+        }
+    }
+
+    private func topIconButton(systemName: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.black.opacity(0.85))
+                .frame(width: 36, height: 36)
+                .background(
+                    Circle()
+                        .fill(Color.black.opacity(0.06))
+                )
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var gameScreen: some View {
@@ -269,7 +287,7 @@ struct ControllerView: View {
     }
 }
 
-// MARK: - Browser / keyboard / chrome (unchanged behavior)
+// MARK: - Browser / keyboard
 
 struct InPanelBrowser: View {
     @EnvironmentObject var appState: AppState

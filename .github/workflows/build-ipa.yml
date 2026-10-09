@@ -137,12 +137,12 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.4.2
-          name: k1emu v2.4.2 — full game visible (no zoom crop)
+          tag_name: v2.4.3
+          name: k1emu v2.4.3 — landscape top bar fixed
           body: |
-            - **No zoom/crop** — entire NDS dual-screen is visible (aspect-fit)
-            - GAME panel height matches framebuffer aspect so the image is as large as possible
-            - Medium sticks (~92pt)
+            - Menu / TV / Close always visible in landscape (darker icons + fixed top bar height)
+            - Landscape-aware spacing for GAME, sticks, browser
+            - Full game frame (aspect-fit, no zoom crop)
             - Controls: D-pad, ABXY, shoulders, Start/Select
 
             Install with LiveContainer / AltStore / SideStore / TrollStore.
