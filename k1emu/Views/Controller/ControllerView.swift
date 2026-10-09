@@ -3,7 +3,7 @@ import UIKit
 import WebKit
 
 /// Controller UI — works in portrait and landscape.
-/// Top bar (menu · title · TV · close) always visible.
+/// GAME panel sized to framebuffer aspect (taller, narrower) so pixels fill it.
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -72,22 +72,27 @@ struct ControllerView: View {
 
     private func layout(size: CGSize, landscape: Bool) -> some View {
         let stickSize: CGFloat = landscape ? 84 : 92
-        let browserH: CGFloat = landscape ? 52 : 64
-        let sideW: CGFloat = landscape ? 88 : 96
+        let browserH: CGFloat = landscape ? 48 : 60
+        let sideW: CGFloat = landscape ? 90 : 98
         let topBarH: CGFloat = 40
 
-        // GAME box: maximize while keeping full aspect (no crop)
-        let gameW = max(100, size.width - sideW * 2 - 12)
-        let idealH = gameW / gameAspect
-        let maxGameH = size.height - topBarH - browserH - stickSize - (landscape ? 70 : 90)
-        let gameH = min(max(idealH, landscape ? 160 : 200), max(maxGameH, 140))
+        // Height-first: make GAME as tall as possible, then width from aspect.
+        // Result = taller + narrower panel so NDS dual-screen fills the black box.
+        let reserved = topBarH + browserH + stickSize + (landscape ? 64 : 80)
+        let maxGameH = max(180, size.height - reserved)
+        let gameH = maxGameH
+        let maxGameW = size.width - sideW * 2 - 8
+        // width = height * (w/h) so panel matches framebuffer aspect
+        var gameW = gameH * gameAspect
+        // keep a bit of side margin inside the row ("smaller on the sides")
+        gameW = min(gameW, maxGameW * 0.92)
+        gameW = max(gameW, 120)
 
         return VStack(spacing: 0) {
             topBar
                 .frame(height: topBarH)
                 .padding(.horizontal, 8)
 
-            // Shoulders
             HStack {
                 VStack(spacing: 3) {
                     shoulderButton("LT")
@@ -102,21 +107,23 @@ struct ControllerView: View {
             .padding(.horizontal, landscape ? 28 : 36)
             .padding(.top, 2)
 
-            // Main: D-pad · GAME · face
-            HStack(alignment: .center, spacing: 4) {
+            HStack(alignment: .center, spacing: 6) {
                 PhotoDPad()
                     .frame(width: sideW - 4, height: sideW - 4)
+
+                Spacer(minLength: 0)
 
                 gameScreen
                     .frame(width: gameW, height: gameH)
 
+                Spacer(minLength: 0)
+
                 PhotoFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor)
                     .frame(width: sideW, height: sideW)
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, 6)
             .padding(.top, 4)
 
-            // Select · Browser · Start
             HStack(spacing: 20) {
                 holdDot(label: "−", id: InputBridge.SELECT)
                 DotButton(systemImage: "globe",
@@ -130,7 +137,6 @@ struct ControllerView: View {
 
             Spacer(minLength: 2)
 
-            // Sticks + Browser
             HStack(alignment: .center, spacing: 8) {
                 PhotoStick(offset: $leftStick, size: stickSize)
 
@@ -146,7 +152,6 @@ struct ControllerView: View {
         .frame(width: size.width, height: size.height, alignment: .top)
     }
 
-    /// Menu · title · TV · close — high contrast so always readable in landscape
     private var topBar: some View {
         HStack(spacing: 8) {
             topIconButton(systemName: "line.3.horizontal") {
@@ -178,10 +183,7 @@ struct ControllerView: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Color.black.opacity(0.85))
                 .frame(width: 36, height: 36)
-                .background(
-                    Circle()
-                        .fill(Color.black.opacity(0.06))
-                )
+                .background(Circle().fill(Color.black.opacity(0.06)))
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -195,7 +197,7 @@ struct ControllerView: View {
             if hasLivePixels {
                 EmulatorScreenView()
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .padding(2)
+                    .padding(1)
             } else {
                 VStack(spacing: 4) {
                     Text("GAME")
