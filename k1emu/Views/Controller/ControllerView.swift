@@ -2,9 +2,8 @@ import SwiftUI
 import UIKit
 import WebKit
 
-/// Controller matching the reference layout exactly.
-/// White background · LT/RT triangles · LB/RB · cross D-pad · GAME · face diamond
-/// Three dots under GAME: 1 Cursor · 2 Browser · 3 CHIP-8 pad
+/// Layout matching user screenshot:
+/// White bg · LT/LB · RT/RB pills · black cross D-pad · tall GAME · ABXY · sticks + Browser
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -29,6 +28,11 @@ struct ControllerView: View {
         appState.usingBuiltinCore || game.system.uppercased() == "CHIP8"
     }
 
+    private var isHandheldTall: Bool {
+        let s = game.system.uppercased()
+        return ["NDS", "DSI", "GB", "GBC", "GBA", "PSP", "POKEMINI", "VB"].contains(s)
+    }
+
     private var scheme: FaceScheme { FaceScheme.forSystem(game.system) }
 
     var body: some View {
@@ -47,13 +51,11 @@ struct ControllerView: View {
 
             if appState.isMouseMode && showGamePanel {
                 GeometryReader { geo in
-                    let cx = cursorPos.x * geo.size.width
-                    let cy = cursorPos.y * geo.size.height
                     Circle()
                         .stroke(Color.cyan, lineWidth: 2)
                         .background(Circle().fill(Color.cyan.opacity(0.35)))
                         .frame(width: 22, height: 22)
-                        .position(x: cx, y: cy)
+                        .position(x: cursorPos.x * geo.size.width, y: cursorPos.y * geo.size.height)
                         .allowsHitTesting(false)
                 }
                 .zIndex(40)
@@ -71,45 +73,59 @@ struct ControllerView: View {
 
     private func updateCursor() {
         guard appState.isMouseMode else { return }
-        let dx = leftStick.width / 90
-        let dy = leftStick.height / 90
-        cursorPos.x = min(0.98, max(0.02, cursorPos.x + dx * 0.04))
-        cursorPos.y = min(0.98, max(0.02, cursorPos.y + dy * 0.04))
+        cursorPos.x = min(0.98, max(0.02, cursorPos.x + (leftStick.width / 90) * 0.04))
+        cursorPos.y = min(0.98, max(0.02, cursorPos.y + (leftStick.height / 90) * 0.04))
     }
 
     private func layout(in size: CGSize) -> some View {
         let landscape = size.width > size.height
-        let gap: CGFloat = landscape ? 12 : 14
-        let sideCtrl: CGFloat = landscape ? 74 : 82
-        let stickSize: CGFloat = landscape ? 88 : 100
-        let faceR: CGFloat = landscape ? 16 : 18
-        let bottomH: CGFloat = landscape ? 56 : 64
-        let topH: CGFloat = 28
+        let sideCtrl: CGFloat = landscape ? 70 : 78
+        let stickSize: CGFloat = landscape ? 84 : 96
+        let faceR: CGFloat = landscape ? 15 : 17
+        let bottomH: CGFloat = landscape ? 52 : 58
+        let topH: CGFloat = 26
+        let shoulderH: CGFloat = 48
+        let dotsH: CGFloat = 28
 
-        let gameW = min(size.width - sideCtrl * 2 - gap * 2.5,
-                        landscape ? size.width * 0.42 : size.width * 0.50)
-        let gameH = gameW * 0.62
+        let reservedH = topH + shoulderH + bottomH + dotsH + 24
+        let availH = max(160, size.height - reservedH)
+        let maxGameW = size.width - sideCtrl * 2 - 28
+
+        var gameW: CGFloat
+        var gameH: CGFloat
+        if isHandheldTall {
+            gameH = min(availH, size.height * 0.58)
+            gameW = min(maxGameW, gameH * 0.78)
+            if gameW >= maxGameW - 1 {
+                gameW = maxGameW
+                gameH = min(availH, gameW / 0.72)
+            }
+        } else {
+            gameW = min(maxGameW, landscape ? size.width * 0.50 : size.width * 0.55)
+            gameH = min(availH, gameW * 0.75)
+        }
 
         return VStack(spacing: 0) {
-            topBar.frame(height: topH).padding(.horizontal, 12)
+            topBar.frame(height: topH).padding(.horizontal, 10)
 
             HStack {
-                VStack(spacing: 5) {
-                    TriangleShoulder(label: scheme.l2Label, color: shoulderFill)
+                VStack(spacing: 4) {
+                    ShoulderCap(label: scheme.l2Label, color: shoulderFill)
                     ShoulderCap(label: scheme.l1Label, color: shoulderFill)
                 }
-                Spacer(minLength: 40)
-                VStack(spacing: 5) {
-                    TriangleShoulder(label: scheme.r2Label, color: shoulderFill)
+                Spacer(minLength: 24)
+                VStack(spacing: 4) {
+                    ShoulderCap(label: scheme.r2Label, color: shoulderFill)
                     ShoulderCap(label: scheme.r1Label, color: shoulderFill)
                 }
             }
-            .padding(.horizontal, landscape ? 40 : 48)
-            .padding(.top, 6)
+            .padding(.horizontal, landscape ? 36 : 44)
+            .padding(.top, 4)
+            .frame(height: shoulderH)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 4)
 
-            HStack(alignment: .center, spacing: gap) {
+            HStack(alignment: .center, spacing: 10) {
                 CrossDPad()
                     .frame(width: sideCtrl, height: sideCtrl)
 
@@ -117,11 +133,11 @@ struct ControllerView: View {
                     .frame(width: gameW, height: gameH)
 
                 SystemFaceButtons(scheme: scheme, radius: faceR)
-                    .frame(width: sideCtrl + 10, height: sideCtrl + 10)
+                    .frame(width: sideCtrl + 8, height: sideCtrl + 8)
             }
-            .padding(.horizontal, gap)
+            .padding(.horizontal, 8)
 
-            HStack(spacing: 20) {
+            HStack(spacing: 18) {
                 ModeDot(active: appState.isMouseMode, color: .cyan, label: "cursor") {
                     haptic(.medium)
                     appState.isMouseMode.toggle()
@@ -147,19 +163,20 @@ struct ControllerView: View {
                     }
                 }
             }
-            .padding(.top, 12)
+            .frame(height: dotsH)
+            .padding(.top, 6)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 4)
 
-            HStack(alignment: .center, spacing: 14) {
+            HStack(alignment: .center, spacing: 12) {
                 RefStick(offset: $leftStick, size: stickSize)
                 centerPanel
                     .frame(maxWidth: .infinity)
                     .frame(height: bottomH)
                 RefStick(offset: $rightStick, size: stickSize)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 10)
         }
         .frame(width: size.width, height: size.height)
     }
@@ -172,7 +189,7 @@ struct ControllerView: View {
             }
             Text(game.name)
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.black.opacity(0.45))
+                .foregroundStyle(.black.opacity(0.40))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
             IconBtn(appState.isTVModeActive ? "tv.fill" : "tv") {
@@ -190,8 +207,8 @@ struct ControllerView: View {
         Button(action: action) {
             Image(systemName: name)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.black.opacity(0.65))
-                .frame(width: 30, height: 30)
+                .foregroundStyle(.black.opacity(0.60))
+                .frame(width: 28, height: 28)
                 .background(Circle().fill(Color.black.opacity(0.06)))
         }
         .buttonStyle(PressPopStyle())
@@ -199,21 +216,21 @@ struct ControllerView: View {
 
     private var pureGameScreen: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.black)
-                .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
+                .shadow(color: .black.opacity(0.15), radius: 6, y: 2)
 
             if hasLivePixels && showGamePanel {
                 EmulatorScreenView()
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .padding(2)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .padding(1)
             } else if showGamePanel {
                 Text("GAME")
-                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                    .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
             } else {
                 Text("CONTROLLER")
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
                     .foregroundStyle(.white.opacity(0.5))
             }
         }
@@ -222,19 +239,18 @@ struct ControllerView: View {
     @ViewBuilder
     private var centerPanel: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(Color.black)
-                .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
 
             if appState.showKeyboardInPanel {
                 Chip8Keypad()
             } else {
                 Text("Browser")
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
                     .foregroundStyle(.white)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .onTapGesture {
             if !appState.showKeyboardInPanel {
                 haptic(.medium)
@@ -250,51 +266,6 @@ struct ControllerView: View {
     }
 }
 
-// MARK: - Triangle shoulder (LT / RT from reference)
-
-struct TriangleShoulder: View {
-    let label: String
-    let color: Color
-    @State private var pressed = false
-
-    var body: some View {
-        Text(label)
-            .font(.system(size: 9, weight: .bold, design: .rounded))
-            .foregroundStyle(Color(white: 0.35))
-            .frame(width: 54, height: 20)
-            .background(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 10, bottomLeadingRadius: 4,
-                    bottomTrailingRadius: 4, topTrailingRadius: 10
-                )
-                .fill(color)
-            )
-            .scaleEffect(pressed ? 0.92 : 1)
-            .animation(.spring(response: 0.15, dampingFraction: 0.65), value: pressed)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        if !pressed {
-                            pressed = true
-                            if let id = InputBridge.shoulderId(label) {
-                                InputBridge.shared.set(id, pressed: true)
-                            }
-                        }
-                    }
-                    .onEnded { _ in
-                        pressed = false
-                        if let id = InputBridge.shoulderId(label) {
-                            InputBridge.shared.set(id, pressed: false)
-                        }
-                        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-                    }
-            )
-    }
-}
-
-// MARK: - Cross D-pad matching reference
-
 struct CrossDPad: View {
     @State private var held = false
 
@@ -303,9 +274,9 @@ struct CrossDPad: View {
             let s = min(geo.size.width, geo.size.height)
             ZStack {
                 Capsule().fill(Color.black)
-                    .frame(width: s * 0.28, height: s)
+                    .frame(width: s * 0.30, height: s)
                 Capsule().fill(Color.black)
-                    .frame(width: s, height: s * 0.28)
+                    .frame(width: s, height: s * 0.30)
             }
             .frame(width: s, height: s)
             .scaleEffect(held ? 0.96 : 1)
