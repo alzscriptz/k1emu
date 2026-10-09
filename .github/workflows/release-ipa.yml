@@ -2,6 +2,12 @@ name: Release IPA
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag (for example v2.6.0)"
+        required: true
+        default: "v2.6.0"
+        type: string
 
 permissions:
   contents: write
@@ -13,6 +19,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: audit/real-emulation-and-gameplay
 
       - name: Select Xcode
         run: |
@@ -43,6 +51,7 @@ jobs:
           echo "APP=$APP"
           test -n "$APP"
 
+          rm -rf Payload k1emu.ipa
           mkdir -p Payload
           cp -R "$APP" Payload/
           mkdir -p "Payload/k1emu.app/Frameworks"
@@ -51,14 +60,27 @@ jobs:
           (cd Payload && zip -qr ../k1emu.ipa .)
           ls -lah k1emu.ipa
 
-      - name: Upload release
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: k1emu-ipa-${{ inputs.release_tag }}
+          path: k1emu.ipa
+          retention-days: 14
+
+      - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.9.0
-          name: k1emu v1.9.0
+          tag_name: ${{ inputs.release_tag }}
+          name: k1emu ${{ inputs.release_tag }}
           body: |
-            Real Xcode-built unsigned IPA.
-            Sideload with AltStore / SideStore / TrollStore.
+            K1emu gameplay/controller update.
+
+            - TV/external display is intended to show only the game output.
+            - The phone remains the controller when TV mode is enabled.
+            - Gameplay controls are kept separate from the game image.
+            - This is an unsigned IPA; sideloading/signing may be required.
+
+            Compatibility depends on the bundled emulator core and the ROM.
           files: k1emu.ipa
           fail_on_unmatched_files: true
         env:
