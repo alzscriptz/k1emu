@@ -137,11 +137,13 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.5.0
-          name: k1emu v2.5.0 — normal GAME size + fill fix only
+          tag_name: v2.5.1
+          name: k1emu v2.5.1 — reference controller layout + VFX
           body: |
-            - GAME panel back to **normal size** (not oversized)
-            - Pixels still **fill** the GAME panel (UIKit aspectFill)
+            - Controller matches reference: D-pad · GAME · ABXY · dots · sticks · Browser
+            - No control overlap
+            - Press VFX (scale + glow + haptic) on buttons / D-pad / face
+            - GAME panel clean and centered
 
             Install with LiveContainer / AltStore / SideStore / TrollStore.
           files: k1emu.ipa
