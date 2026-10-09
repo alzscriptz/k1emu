@@ -11,7 +11,7 @@ on:
       release_tag:
         description: "New GitHub release tag"
         required: true
-        default: "v2.8.0"
+        default: "v2.9.0"
         type: string
   push:
     tags:
@@ -74,6 +74,7 @@ jobs:
             swanstation_libretro.dylib.zip
             ppsspp_libretro.dylib.zip
             flycast_libretro.dylib.zip
+            dolphin_libretro.dylib.zip
             mednafen_vb_libretro_ios.dylib.zip
             mednafen_wswan_libretro_ios.dylib.zip
             pokemini_libretro_ios.dylib.zip
@@ -107,6 +108,7 @@ jobs:
           [ -f Cores/fceumm_libretro.dylib ] && cp Cores/fceumm_libretro.dylib Cores/libnes.dylib || true
           [ -f Cores/snes9x_libretro.dylib ] && cp Cores/snes9x_libretro.dylib Cores/libsnes.dylib || true
           [ -f Cores/gambatte_libretro.dylib ] && cp Cores/gambatte_libretro.dylib Cores/libgb.dylib || true
+          [ -f Cores/dolphin_libretro.dylib ] && cp Cores/dolphin_libretro.dylib Cores/dolphin.dylib || true
 
           echo "Core count:"
           ls Cores/*.dylib 2>/dev/null | wc -l
@@ -144,13 +146,11 @@ jobs:
           ls -lah k1emu.ipa
           SIZE=$(stat -f%z k1emu.ipa 2>/dev/null || stat -c%s k1emu.ipa)
           echo "IPA size bytes: $SIZE"
-          # Fail if IPA is tiny (no cores) — real build is ~40MB+
           if [ "$SIZE" -lt 10000000 ]; then
             echo "ERROR: IPA is only $SIZE bytes — cores missing. Aborting."
             exit 1
           fi
           shasum -a 256 k1emu.ipa
-          # Verify Payload structure
           unzip -l k1emu.ipa | head -40
 
       - name: Upload IPA artifact
@@ -167,13 +167,14 @@ jobs:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
           name: K1emu ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
           body: |
-            **Full IPA with libretro cores (~47 MB).**
+            **Full IPA with libretro cores including Dolphin (Wii/GameCube).**
 
-            - Contains `Payload/k1emu.app` + Frameworks (cores)
-            - Unsigned — install with LiveContainer / AltStore / SideStore / TrollStore
-            - If the file is under 1 MB it is broken; re-download from Actions artifact instead
+            - Payload + Frameworks with cores
+            - Controller matches reference mockup
+            - Unsigned — LiveContainer / AltStore / SideStore / TrollStore
+            - File must be 40MB+ (under 1MB = broken)
 
-            Controller: white layout matching reference, system face buttons, cursor / browser / CHIP-8 dots, save/load slots.
+            Wii/GC use dolphin_libretro. Heavy titles may be slow; Dolphin Sys folder improves compatibility.
           files: k1emu.ipa
           fail_on_unmatched_files: true
           make_latest: true
