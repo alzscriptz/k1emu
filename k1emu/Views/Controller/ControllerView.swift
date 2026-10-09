@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import WebKit
 
-/// Controller: GAME higher, browser taller, correct game aspect.
+/// Controller UI. When showGamePanel == false (TV mode), phone is pure controller.
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -61,23 +61,22 @@ struct ControllerView: View {
 
     private func layout(size: CGSize, landscape: Bool) -> some View {
         let stickSize: CGFloat = landscape ? 80 : 88
-        let browserH: CGFloat = landscape ? 72 : 88   // taller browser
-        let sideW: CGFloat = landscape ? 86 : 92
-        let topBarH: CGFloat = 34                     // compact top → GAME sits higher
+        let browserH: CGFloat = landscape ? 72 : 88
+        let sideW: CGFloat = landscape ? 90 : 96
+        let topBarH: CGFloat = 34
 
-        let gameW = max(160, size.width - sideW * 2 - 10)
-        // Leave room for shoulders + dots + sticks + browser; push GAME up
+        // GAME only when not in TV mode
+        let gameW = showGamePanel ? max(160, size.width - sideW * 2 - 10) : 0
         let reservedBottom = browserH + stickSize + 36
-        let reservedTop = topBarH + 28               // shoulders under top bar
+        let reservedTop = topBarH + 28
         let maxGameH = max(180, size.height - reservedTop - reservedBottom)
-        let gameH = min(maxGameH, size.height * (landscape ? 0.48 : 0.44))
+        let gameH = showGamePanel ? min(maxGameH, size.height * (landscape ? 0.48 : 0.44)) : 0
 
         return VStack(spacing: 0) {
             topBar
                 .frame(height: topBarH)
                 .padding(.horizontal, 8)
 
-            // Shoulders tight under top bar
             HStack {
                 VStack(spacing: 2) {
                     shoulderButton("LT")
@@ -92,21 +91,35 @@ struct ControllerView: View {
             .padding(.horizontal, landscape ? 24 : 32)
             .padding(.top, 1)
 
-            // GAME row — higher on screen
             HStack(alignment: .center, spacing: 4) {
                 PhotoDPad()
-                    .frame(width: sideW - 4, height: sideW - 4)
+                    .frame(width: showGamePanel ? sideW - 4 : sideW + 10,
+                           height: showGamePanel ? sideW - 4 : sideW + 10)
 
-                gameScreen
-                    .frame(width: gameW, height: gameH)
+                if showGamePanel {
+                    gameScreen
+                        .frame(width: gameW, height: gameH)
+                } else {
+                    // TV mode: center status between enlarged controls
+                    VStack(spacing: 6) {
+                        Text("CONTROLLER")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundStyle(.black.opacity(0.45))
+                        Text(game.name)
+                            .font(.caption2)
+                            .foregroundStyle(.black.opacity(0.35))
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
 
                 PhotoFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor)
-                    .frame(width: sideW, height: sideW)
+                    .frame(width: showGamePanel ? sideW : sideW + 10,
+                           height: showGamePanel ? sideW : sideW + 10)
             }
             .padding(.horizontal, 4)
             .padding(.top, 2)
 
-            // Select · browser dot · Start
             HStack(spacing: 18) {
                 holdDot(label: "−", id: InputBridge.SELECT)
                 DotButton(systemImage: "globe",
@@ -120,7 +133,6 @@ struct ControllerView: View {
 
             Spacer(minLength: 2)
 
-            // Sticks + taller browser
             HStack(alignment: .center, spacing: 8) {
                 PhotoStick(offset: $leftStick, size: stickSize)
 
@@ -149,9 +161,9 @@ struct ControllerView: View {
                 .lineLimit(1)
                 .frame(maxWidth: .infinity)
 
-            topIconButton(systemName: "tv") {
+            topIconButton(systemName: appState.isTVModeActive ? "tv.fill" : "tv") {
                 haptic(.medium)
-                appState.isTVModeActive = true
+                appState.isTVModeActive.toggle()
             }
 
             topIconButton(systemName: "xmark") {
@@ -181,7 +193,7 @@ struct ControllerView: View {
             if hasLivePixels {
                 EmulatorScreenView()
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .padding(2)
+                    .padding(1)
             } else {
                 Text("GAME")
                     .font(.system(size: 26, weight: .bold, design: .rounded))

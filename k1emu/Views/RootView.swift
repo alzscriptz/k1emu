@@ -3,6 +3,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var settings: SettingsStore
+    @ObservedObject private var external = ExternalDisplayManager.shared
 
     var body: some View {
         ZStack {
@@ -10,8 +11,17 @@ struct RootView: View {
 
             if appState.isPlaying, let game = appState.currentGame {
                 if appState.isTVModeActive {
-                    // TV SHARE: ONLY the game — no controller, no chrome
-                    TVGameOnlyView(game: game)
+                    // PHONE = controller only (no GAME panel)
+                    ControllerView(game: game, showGamePanel: false)
+                        .onAppear {
+                            ExternalDisplayManager.shared.startGameDisplay(
+                                appState: appState,
+                                settings: settings
+                            )
+                        }
+                        .onDisappear {
+                            ExternalDisplayManager.shared.stopGameDisplay()
+                        }
                 } else {
                     ControllerView(game: game, showGamePanel: true)
                 }
@@ -24,6 +34,22 @@ struct RootView: View {
                     .transition(.opacity.combined(with: .scale))
                     .zIndex(100)
             }
+
+            // Hint when TV mode on but no external screen yet
+            if appState.isTVModeActive && appState.isPlaying && !external.hasExternalScreen {
+                VStack {
+                    Spacer()
+                    Text("Connect AirPlay / HDMI — TV shows the game, this phone is the controller")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.bottom, 12)
+                }
+                .allowsHitTesting(false)
+            }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: appState.isPlaying)
         .animation(.spring(response: 0.3), value: appState.isTVModeActive)
@@ -31,40 +57,12 @@ struct RootView: View {
         .sheet(isPresented: $appState.showFAQ) { FAQView() }
         .sheet(item: $appState.showGameInfo) { GameInfoSheet(game: $0) }
         .sheet(item: $appState.showTweakPickerFor) { TweakPickerSheet(game: $0) }
-    }
-}
-
-/// Full-screen pure game surface for AirPlay / TV share.
-struct TVGameOnlyView: View {
-    let game: GameItem
-    @EnvironmentObject var appState: AppState
-    @ObservedObject private var fb = FrameBuffer.shared
-    @ObservedObject private var chip8 = Chip8Core.shared
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-
-            EmulatorScreenView()
-                .ignoresSafeArea()
-
-            // Minimal exit — nearly invisible, corner tap
-            VStack {
-                HStack {
-                    Spacer()
-                    Button {
-                        appState.isTVModeActive = false
-                    } label: {
-                        Image(systemName: "iphone")
-                            .font(.caption)
-                            .foregroundStyle(.white.opacity(0.25))
-                            .padding(16)
-                    }
-                }
-                Spacer()
+        .onChange(of: appState.isTVModeActive) { active in
+            if active {
+                ExternalDisplayManager.shared.startGameDisplay(appState: appState, settings: settings)
+            } else {
+                ExternalDisplayManager.shared.stopGameDisplay()
             }
         }
-        .statusBarHidden(true)
-        .persistentSystemOverlays(.hidden)
     }
 }
