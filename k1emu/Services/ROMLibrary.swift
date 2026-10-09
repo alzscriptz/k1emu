@@ -1,28 +1,28 @@
 import Foundation
-import Combine
+import UIKit
 
-@MainActor
+/// ROM library: scan Documents/ROMs, import via document picker, persist metadata.
 final class ROMLibrary: ObservableObject {
+    static let shared = ROMLibrary()
+
     @Published var games: [GameItem] = []
     @Published var lastError: String?
 
     private let fm = FileManager.default
 
-    private var documentsURL: URL {
+    var documentsURL: URL {
         fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
+
+    var romsDirectory: URL {
+        documentsURL.appendingPathComponent("ROMs", isDirectory: true)
     }
 
     private var libraryURL: URL {
         documentsURL.appendingPathComponent("library.json")
     }
 
-    var romsDirectory: URL {
-        let url = documentsURL.appendingPathComponent("ROMs", isDirectory: true)
-        try? fm.createDirectory(at: url, withIntermediateDirectories: true)
-        return url
-    }
-
-    private static let romExts: Set<String> = [
+    private let knownExt: Set<String> = [
         "ch8", "c8", "nds", "dsi", "gba", "gb", "gbc", "nes", "fds",
         "sfc", "smc", "n64", "z64", "v64", "iso", "bin", "cue", "chd",
         "pbp", "md", "gen", "smd", "sms", "gg", "zip", "7z", "rar"
@@ -30,8 +30,10 @@ final class ROMLibrary: ObservableObject {
 
     init() {
         try? fm.createDirectory(at: romsDirectory, withIntermediateDirectories: true)
+        // Wipe old IBM demo if present
+        let ibm = romsDirectory.appendingPathComponent("IBM_Logo.ch8")
+        try? fm.removeItem(at: ibm)
         load()
-        seedDemoIfEmpty()
         scanDocumentsForROMs()
     }
 
@@ -41,8 +43,8 @@ final class ROMLibrary: ObservableObject {
             games = []
             return
         }
-        // Keep entries that still have files
-        games = decoded.filter { $0.fileExists }
+        games = decoded
+            .filter { $0.fileExists && $0.fileName != "IBM_Logo.ch8" }
             .sorted { ($0.lastPlayed ?? $0.dateAdded) > ($1.lastPlayed ?? $1.dateAdded) }
         if games.count != decoded.count { save() }
     }
@@ -52,164 +54,75 @@ final class ROMLibrary: ObservableObject {
         try? data.write(to: libraryURL, options: .atomic)
     }
 
-    /// Copy from a security-scoped / picker URL into ROMs/. Returns the game or nil.
     @discardableResult
-    func importFile(from source: URL, name: String?, system: String) -> GameItem? {
+    func addFromURL(_ url: URL) -> GameItem? {
         lastError = nil
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
 
-        let accessed = source.startAccessingSecurityScopedResource()
-        defer { if accessed { source.stopAccessingSecurityScopedResource() } }
+        var coordError: NSError?
+        var result: GameItem?
+        let coordinator = NSFileCoordinator()
+        coordinator.coordinate(readingItemAt: url, options: [], error: &coordError) { readURL in
+            result = self.copyIn(readURL)
+        }
+        if let coordError {
+            lastError = coordError.localizedDescription
+            return nil
+        }
+        return result
+    }
 
-        let originalName = source.lastPathComponent
-        let safeName = sanitize(originalName)
+    private func copyIn(_ url: URL) -> GameItem? {
+        let ext = url.pathExtension.lowercased()
+        guard knownExt.contains(ext) else {
+            lastError = "Unsupported file type .\(ext)"
+            return nil
+        }
+        let safeName = sanitize(url.lastPathComponent)
         let dest = romsDirectory.appendingPathComponent(safeName)
-
         do {
-            // Remove existing dest if any
             if fm.fileExists(atPath: dest.path) {
                 try fm.removeItem(at: dest)
             }
-
-            // Prefer NSFileCoordinator for iCloud / Files picks
-            var coordError: NSError?
-            var copyError: Error?
-            let coordinator = NSFileCoordinator(filePresenter: nil)
-            coordinator.coordinate(readingItemAt: source, options: [], error: &coordError) { readURL in
-                do {
-                    try self.fm.copyItem(at: readURL, to: dest)
-                } catch {
-                    // Fallback: Data read/write
-                    do {
-                        let data = try Data(contentsOf: readURL)
-                        try data.write(to: dest, options: .atomic)
-                    } catch {
-                        copyError = error
-                    }
-                }
-            }
-
-            if let e = coordError {
-                // Last resort without coordinator
-                if !fm.fileExists(atPath: dest.path) {
-                    let data = try Data(contentsOf: source)
-                    try data.write(to: dest, options: .atomic)
-                }
-                _ = e
-            }
-            if let copyError {
-                // try plain Data once more
-                if !fm.fileExists(atPath: dest.path) {
-                    let data = try Data(contentsOf: source)
-                    try data.write(to: dest, options: .atomic)
-                } else {
-                    throw copyError
-                }
-            }
-
-            guard fm.fileExists(atPath: dest.path) else {
-                lastError = "Copy finished but file not found at destination"
-                return nil
-            }
-
-            let display = (name?.isEmpty == false) ? name! : (safeName as NSString).deletingPathExtension
-            let game = GameItem(name: display, system: system, fileName: safeName)
-
-            // Replace existing same fileName
+            try fm.copyItem(at: url, to: dest)
+            let system = Self.detectSystem(ext: ext) ?? "UNKNOWN"
+            let name = url.deletingPathExtension().lastPathComponent
+            let game = GameItem(name: name, system: system, fileName: safeName)
             games.removeAll { $0.fileName == safeName }
             games.insert(game, at: 0)
             save()
             return game
         } catch {
-            lastError = "Import failed: \(error.localizedDescription)"
+            lastError = error.localizedDescription
             return nil
         }
     }
 
-    func addFromURL(_ urlString: String, name: String?, system: String) async throws -> GameItem {
-        lastError = nil
-        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
-        let (data, response) = try await URLSession.shared.data(from: url)
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            throw URLError(.badServerResponse)
-        }
-        var fileName = url.lastPathComponent
-        if fileName.isEmpty || !fileName.contains(".") {
-            fileName = "rom_\(UUID().uuidString).bin"
-        }
-        fileName = sanitize(fileName)
-        let dest = romsDirectory.appendingPathComponent(fileName)
-        try data.write(to: dest, options: .atomic)
-        let display = (name?.isEmpty == false) ? name! : (fileName as NSString).deletingPathExtension
-        let game = GameItem(name: display, system: system, fileName: fileName)
-        games.removeAll { $0.fileName == fileName }
-        games.insert(game, at: 0)
-        save()
-        return game
-    }
-
-    /// Scan Documents + ROMs + Inbox for any ROM files and add missing ones.
     func scanDocumentsForROMs() {
-        let roots = [
-            romsDirectory,
-            documentsURL,
-            documentsURL.appendingPathComponent("Inbox", isDirectory: true)
-        ]
-        for root in roots {
-            guard let files = try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil) else { continue }
-            for file in files {
-                let ext = file.pathExtension.lowercased()
-                guard Self.romExts.contains(ext) else { continue }
-                let name = file.lastPathComponent
-                // Already in library?
-                if games.contains(where: { $0.fileName == name }) { continue }
+        guard let files = try? fm.contentsOfDirectory(
+            at: romsDirectory,
+            includingPropertiesForKeys: nil
+        ) else { return }
 
-                // Ensure it's inside ROMs/
-                let dest = romsDirectory.appendingPathComponent(name)
-                if file.standardizedFileURL != dest.standardizedFileURL {
-                    if !fm.fileExists(atPath: dest.path) {
-                        try? fm.copyItem(at: file, to: dest)
-                    }
-                }
-                guard fm.fileExists(atPath: dest.path) else { continue }
-
-                let system = Self.detectSystem(ext: ext) ?? "Other"
-                let game = GameItem(
-                    name: (name as NSString).deletingPathExtension,
-                    system: system,
-                    fileName: name
-                )
-                games.insert(game, at: 0)
+        var changed = false
+        for file in files {
+            let name = file.lastPathComponent
+            if name == "IBM_Logo.ch8" {
+                try? fm.removeItem(at: file)
+                continue
             }
-        }
-        save()
-    }
-
-    /// IBM Logo CHIP-8 demo so library is never empty and Run works offline.
-    private func seedDemoIfEmpty() {
-        let demoName = "IBM_Logo.ch8"
-        let dest = romsDirectory.appendingPathComponent(demoName)
-        if !fm.fileExists(atPath: dest.path) {
-            let bytes: [UInt8] = [
-                0x00, 0xE0, 0xA2, 0x2A, 0x60, 0x0C, 0x61, 0x08, 0xD0, 0x1F, 0x70, 0x09,
-                0xA2, 0x39, 0xD0, 0x1F, 0xA2, 0x48, 0xD0, 0x1F, 0xA2, 0x57, 0xD0, 0x1F,
-                0xA2, 0x66, 0xD0, 0x1F, 0xA2, 0x75, 0xD0, 0x1F, 0x12, 0x28, 0xFF, 0x00,
-                0xFF, 0x00, 0x3C, 0x00, 0x3C, 0x00, 0x3C, 0x00, 0x3C, 0x00, 0xFF, 0x00,
-                0xFF, 0xFF, 0x00, 0xFF, 0x00, 0x38, 0x00, 0x3F, 0x00, 0x3F, 0x00, 0x38,
-                0x00, 0xFF, 0x00, 0xFF, 0x80, 0x00, 0xE0, 0x00, 0xE0, 0x00, 0x80, 0x00,
-                0x80, 0x00, 0xE0, 0x00, 0xE0, 0x00, 0x80, 0xF8, 0x00, 0xFC, 0x00, 0x3E,
-                0x00, 0x3F, 0x00, 0x3B, 0x00, 0x39, 0x00, 0xF8, 0x00, 0xF8, 0x03, 0x00,
-                0x07, 0x00, 0x0F, 0x00, 0xBF, 0x00, 0xFB, 0x00, 0xF3, 0x00, 0xE3, 0x00,
-                0x43, 0xE0, 0x00, 0xE0, 0x00, 0x80, 0x00, 0x80, 0x00, 0x80, 0x00, 0x80,
-                0x00, 0xE0, 0x00, 0xE0
-            ]
-            try? Data(bytes).write(to: dest, options: .atomic)
-        }
-        if !games.contains(where: { $0.fileName == demoName }),
-           fm.fileExists(atPath: dest.path) {
-            let game = GameItem(name: "IBM Logo (demo)", system: "CHIP8", fileName: demoName)
+            let ext = file.pathExtension.lowercased()
+            guard knownExt.contains(ext) else { continue }
+            if games.contains(where: { $0.fileName == name }) { continue }
+            let system = Self.detectSystem(ext: ext) ?? "UNKNOWN"
+            let title = file.deletingPathExtension().lastPathComponent
+            let game = GameItem(name: title, system: system, fileName: name)
             games.insert(game, at: 0)
-            save()
+            changed = true
         }
+        games.removeAll { $0.fileName == "IBM_Logo.ch8" || !$0.fileExists }
+        if changed { save() }
     }
 
     func markPlayed(_ game: GameItem) {
@@ -239,17 +152,16 @@ final class ROMLibrary: ObservableObject {
 
     static func detectSystem(ext: String) -> String? {
         switch ext.lowercased() {
-        case "ch8", "c8": return "CHIP8"
         case "nds", "dsi": return "NDS"
         case "gba": return "GBA"
-        case "gb": return "GB"
-        case "gbc": return "GBC"
+        case "gb", "gbc": return "GB"
         case "nes", "fds": return "NES"
         case "sfc", "smc": return "SNES"
         case "n64", "z64", "v64": return "N64"
-        case "iso", "bin", "cue", "chd", "pbp": return "PS1"
-        case "md", "gen", "smd": return "Genesis"
+        case "ch8", "c8": return "CHIP8"
+        case "md", "gen", "smd": return "GEN"
         case "sms", "gg": return "SMS"
+        case "iso", "bin", "cue", "chd", "pbp": return "DISC"
         default: return nil
         }
     }

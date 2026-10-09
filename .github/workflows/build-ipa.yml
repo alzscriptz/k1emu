@@ -137,12 +137,11 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.4.5
-          name: k1emu v2.4.5 — large GAME + no logo chrome
+          tag_name: v2.4.6
+          name: k1emu v2.4.6 — game FILLS GAME window, no IBM demo
           body: |
-            - Removed K1 logo marks from library / settings
-            - GAME window large again (~half screen, full width between controls)
-            - Full dual-screen visible (aspect-fit, no crop)
+            - IBM Logo demo ROM removed (and deleted if present)
+            - Game image **fills entire GAME panel** edge-to-edge (no side black bars)
 
             Install with LiveContainer / AltStore / SideStore / TrollStore.
           files: k1emu.ipa
