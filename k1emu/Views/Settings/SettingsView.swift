@@ -60,12 +60,9 @@ struct SettingsView: View {
                         settingsCard(title: "Cores (dylibs)", icon: "cpu") {
                             let cores = coreLoader.listAvailableCores()
                             if cores.isEmpty {
-                                Text("No .dylib in app yet.")
+                                Text("No cores loaded yet.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                                Text("Send an ios-arm64 dylib and it gets packed into Frameworks/.")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
                             } else {
                                 ForEach(cores, id: \.self) { name in
                                     HStack {
@@ -109,11 +106,7 @@ struct SettingsView: View {
                         }
 
                         settingsCard(title: "About", icon: "info.circle") {
-                            LabeledContent("Version", value: "1.3.0")
-                            LabeledContent("Build", value: "4")
-                            Text("k1emu — drop cores as dylib, we package them")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            LabeledContent("Version", value: "2.4.5")
                         }
 
                         Spacer(minLength: 40)
@@ -130,7 +123,6 @@ struct SettingsView: View {
 
     private var headerCard: some View {
         HStack(spacing: 14) {
-            K1Logo(size: 52)
             VStack(alignment: .leading, spacing: 2) {
                 Text("k1emu").font(.title2.bold())
                 Text("Customize everything").font(.caption).foregroundStyle(.secondary)
