@@ -61,17 +61,20 @@ struct ControllerView: View {
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
-        .onChange(of: leftStick) { _ in
-            guard appState.isMouseMode else { return }
-            let dx = leftStick.width / 90
-            let dy = leftStick.height / 90
-            cursorPos.x = min(0.98, max(0.02, cursorPos.x + dx * 0.04))
-            cursorPos.y = min(0.98, max(0.02, cursorPos.y + dy * 0.04))
-        }
+        .onChange(of: leftStick.width) { _, _ in updateCursor() }
+        .onChange(of: leftStick.height) { _, _ in updateCursor() }
         .onDisappear {
             InputBridge.shared.clearAll()
             Chip8Core.shared.clearKeys()
         }
+    }
+
+    private func updateCursor() {
+        guard appState.isMouseMode else { return }
+        let dx = leftStick.width / 90
+        let dy = leftStick.height / 90
+        cursorPos.x = min(0.98, max(0.02, cursorPos.x + dx * 0.04))
+        cursorPos.y = min(0.98, max(0.02, cursorPos.y + dy * 0.04))
     }
 
     private func layout(in size: CGSize) -> some View {
