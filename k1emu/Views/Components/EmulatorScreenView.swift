@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// Shows Chip-8 OR libretro FrameBuffer pixels in the GAME panel / TV surface.
+/// Fills the GAME panel with live pixels (scaled to fit, no tiny strip).
 struct EmulatorScreenView: View {
     @ObservedObject private var chip8 = Chip8Core.shared
     @ObservedObject private var fb = FrameBuffer.shared
@@ -9,25 +9,26 @@ struct EmulatorScreenView: View {
 
     var body: some View {
         GeometryReader { geo in
-            Group {
+            ZStack {
+                Color.black
                 if appState.usingBuiltinCore, let img = chip8.makeCGImage() {
                     Image(decorative: img, scale: 1.0)
                         .resizable()
                         .interpolation(.none)
-                        .aspectRatio(max(1, CGFloat(chip8.makeCGImage()?.width ?? 64)) / max(1, CGFloat(chip8.makeCGImage()?.height ?? 32)), contentMode: .fit)
+                        .scaledToFit()
+                        .frame(width: geo.size.width, height: geo.size.height)
                 } else if let img = fb.makeCGImage() {
                     Image(decorative: img, scale: 1.0)
                         .resizable()
                         .interpolation(.none)
-                        .aspectRatio(CGFloat(fb.width) / max(1, CGFloat(fb.height)), contentMode: .fit)
-                } else {
-                    Color.black
+                        .scaledToFit()
+                        .frame(width: geo.size.width, height: geo.size.height)
                 }
             }
-            .frame(maxWidth: geo.size.width, maxHeight: geo.size.height)
             .frame(width: geo.size.width, height: geo.size.height)
         }
         .background(Color.black)
+        .clipped()
         .id(appState.usingBuiltinCore ? chip8.frameID : fb.frameID)
     }
 }

@@ -53,6 +53,7 @@ struct ControllerView: View {
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+        .onDisappear { InputBridge.shared.clearAll() }
     }
 
     private var photoLayout: some View {
@@ -92,47 +93,36 @@ struct ControllerView: View {
             .padding(.horizontal, 12)
             .padding(.top, 4)
 
-            Spacer(minLength: 4)
+            Spacer(minLength: 2)
 
             HStack {
                 VStack(spacing: 5) {
-                    shoulderTrapezoid("LT")
-                    shoulderPill("LB")
+                    shoulderButton("LT")
+                    shoulderButton("LB")
                 }
                 Spacer()
                 VStack(spacing: 5) {
-                    shoulderTrapezoid("RT")
-                    shoulderPill("RB")
+                    shoulderButton("RT")
+                    shoulderButton("RB")
                 }
             }
             .padding(.horizontal, 40)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 4)
 
-            HStack(alignment: .center, spacing: 8) {
+            // GAME row — taller so NDS 256×384 fills the panel
+            HStack(alignment: .center, spacing: 6) {
                 PhotoDPad()
-                    .frame(width: 78, height: 78)
-                    .onTapGesture { haptic(.light) }
+                    .frame(width: 84, height: 84)
 
                 gameScreen
                     .frame(maxWidth: .infinity)
-                    .frame(height: 128)
+                    .frame(height: 200)
 
-                PhotoFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor) { key in
-                    haptic(.medium)
-                    if appState.usingBuiltinCore {
-                        let map: [String: Int] = ["A": 5, "B": 6, "X": 4, "Y": 1]
-                        if let k = map[key] {
-                            chip8.setKey(k, pressed: true)
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                                chip8.setKey(k, pressed: false)
-                            }
-                        }
-                    }
-                }
-                .frame(width: 90, height: 90)
+                PhotoFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor)
+                    .frame(width: 96, height: 96)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 10)
 
             HStack(spacing: 18) {
                 DotButton(systemImage: "rectangle.on.rectangle",
@@ -151,18 +141,17 @@ struct ControllerView: View {
                     appState.toggleKeyboardPanel()
                 }
             }
-            .padding(.top, 8)
+            .padding(.top, 6)
 
-            Spacer(minLength: 10)
+            Spacer(minLength: 6)
 
-            // Larger Browser on the side (center panel bigger)
             HStack(alignment: .center, spacing: 10) {
                 PhotoStick(offset: $leftStick)
                     .frame(width: 72, height: 72)
 
                 browserPanel
                     .frame(maxWidth: .infinity)
-                    .frame(height: 100)
+                    .frame(height: 88)
 
                 PhotoStick(offset: $rightStick)
                     .frame(width: 72, height: 72)
@@ -170,18 +159,7 @@ struct ControllerView: View {
             .padding(.horizontal, 12)
 
             Spacer(minLength: 8)
-
-            HStack(spacing: 6) {
-                statusChip(appState.coreStatus,
-                           color: (appState.usingBuiltinCore || core.loadedCoreName != nil) ? .green : .orange)
-                if !appState.romLoadStatus.isEmpty {
-                    statusChip(appState.romLoadStatus, color: .cyan)
-                }
-                if hasLivePixels {
-                    statusChip("\(fb.width)x\(fb.height)", color: .green)
-                }
-            }
-            .padding(.bottom, 10)
+            // status chips removed for clean App Store UI
         }
     }
 
@@ -192,6 +170,7 @@ struct ControllerView: View {
 
             if hasLivePixels {
                 EmulatorScreenView()
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .padding(2)
             } else {
                 VStack(spacing: 4) {
@@ -201,23 +180,6 @@ struct ControllerView: View {
                     Text(game.displaySystem)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.5))
-                    if let name = core.loadedCoreName {
-                        Text(name)
-                            .font(.system(size: 9, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.green.opacity(0.9))
-                        if core.isRunning {
-                            Text("waiting for frames…")
-                                .font(.system(size: 8))
-                                .foregroundStyle(.yellow.opacity(0.8))
-                        }
-                    } else if !appState.romLoadStatus.isEmpty {
-                        Text(appState.romLoadStatus)
-                            .font(.system(size: 8))
-                            .foregroundStyle(.orange.opacity(0.9))
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .padding(.horizontal, 6)
-                    }
                 }
             }
         }
@@ -248,32 +210,35 @@ struct ControllerView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private func shoulderTrapezoid(_ label: String) -> some View {
+    private func shoulderButton(_ label: String) -> some View {
         Text(label)
             .font(.system(size: 10, weight: .bold, design: .rounded))
             .foregroundStyle(Color(white: 0.35))
-            .frame(width: 48, height: 18)
-            .background(Capsule().fill(shoulderColor))
-            .onTapGesture { haptic(.soft) }
-    }
-
-    private func shoulderPill(_ label: String) -> some View {
-        Text(label)
-            .font(.system(size: 10, weight: .bold, design: .rounded))
-            .foregroundStyle(Color(white: 0.35))
-            .frame(width: 52, height: 22)
-            .background(RoundedRectangle(cornerRadius: 5).fill(shoulderColor))
-            .onTapGesture { haptic(.light) }
-    }
-
-    private func statusChip(_ text: String, color: Color) -> some View {
-        Text(text)
-            .font(.system(size: 9, weight: .medium, design: .monospaced))
-            .foregroundStyle(color)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(.ultraThinMaterial, in: Capsule())
-            .lineLimit(1)
+            .frame(width: label.hasSuffix("T") ? 48 : 52, height: label.hasSuffix("T") ? 18 : 22)
+            .background(
+                Group {
+                    if label.hasSuffix("T") {
+                        Capsule().fill(shoulderColor)
+                    } else {
+                        RoundedRectangle(cornerRadius: 5).fill(shoulderColor)
+                    }
+                }
+            )
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        if let id = InputBridge.shoulderId(label) {
+                            InputBridge.shared.set(id, pressed: true)
+                        }
+                    }
+                    .onEnded { _ in
+                        if let id = InputBridge.shoulderId(label) {
+                            InputBridge.shared.set(id, pressed: false)
+                        }
+                        haptic(.soft)
+                    }
+            )
     }
 
     private func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle) {
@@ -399,35 +364,78 @@ struct ControllerSettingsModal: View {
     }
 }
 
+// MARK: - D-pad with hold support
+
 struct PhotoDPad: View {
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 5).fill(Color.black).frame(width: 24, height: 76)
-            RoundedRectangle(cornerRadius: 5).fill(Color.black).frame(width: 76, height: 24)
-            Circle().fill(Color.black).frame(width: 18, height: 18)
+        GeometryReader { geo in
+            let s = min(geo.size.width, geo.size.height)
+            ZStack {
+                RoundedRectangle(cornerRadius: 5).fill(Color.black).frame(width: s * 0.32, height: s)
+                RoundedRectangle(cornerRadius: 5).fill(Color.black).frame(width: s, height: s * 0.32)
+                Circle().fill(Color.black).frame(width: s * 0.24, height: s * 0.24)
+            }
+            .frame(width: s, height: s)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { v in
+                        let c = CGPoint(x: s / 2, y: s / 2)
+                        let dx = v.location.x - c.x
+                        let dy = v.location.y - c.y
+                        let dead: CGFloat = 10
+                        let ib = InputBridge.shared
+                        ib.set(InputBridge.UP, pressed: dy < -dead)
+                        ib.set(InputBridge.DOWN, pressed: dy > dead)
+                        ib.set(InputBridge.LEFT, pressed: dx < -dead)
+                        ib.set(InputBridge.RIGHT, pressed: dx > dead)
+                    }
+                    .onEnded { _ in
+                        let ib = InputBridge.shared
+                        ib.set(InputBridge.UP, pressed: false)
+                        ib.set(InputBridge.DOWN, pressed: false)
+                        ib.set(InputBridge.LEFT, pressed: false)
+                        ib.set(InputBridge.RIGHT, pressed: false)
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }
+            )
         }
     }
 }
 
 struct PhotoFaceButtons: View {
     let y: Color, x: Color, b: Color, a: Color
-    var onPress: ((String) -> Void)? = nil
+
     var body: some View {
         ZStack {
-            face(y, "Y").offset(y: -28)
-            face(x, "X").offset(x: -28)
-            face(b, "B").offset(x: 28)
-            face(a, "A").offset(y: 28)
+            face(y, "Y").offset(y: -30)
+            face(x, "X").offset(x: -30)
+            face(b, "B").offset(x: 30)
+            face(a, "A").offset(y: 30)
         }
     }
+
     private func face(_ color: Color, _ label: String) -> some View {
         Text(label)
             .font(.system(size: 12, weight: .bold, design: .rounded))
             .foregroundStyle(.white)
-            .frame(width: 32, height: 32)
+            .frame(width: 34, height: 34)
             .background(Circle().fill(color))
             .contentShape(Circle())
-            .onTapGesture { onPress?(label) }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        if let id = InputBridge.faceId(label) {
+                            InputBridge.shared.set(id, pressed: true)
+                        }
+                    }
+                    .onEnded { _ in
+                        if let id = InputBridge.faceId(label) {
+                            InputBridge.shared.set(id, pressed: false)
+                        }
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    }
+            )
     }
 }
 
