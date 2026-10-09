@@ -1,16 +1,14 @@
 import Foundation
-import Combine
 
-/// Shared joypad state for libretro retro_input_state_t.
-/// Thread-safe bit mask; UI sets bits, core reads them.
-final class InputBridge: ObservableObject {
+/// Shared joypad bits for libretro retro_input_state_t.
+/// Atomic bitmask — safe from UI thread and core C callback.
+final class InputBridge {
     static let shared = InputBridge()
 
-    /// RETRO_DEVICE_ID_JOYPAD_* bits
-    private let lock = NSLock()
     private var bits: UInt32 = 0
+    private let lock = NSLock()
 
-    // Standard libretro pad IDs
+    // RETRO_DEVICE_ID_JOYPAD_*
     static let B: UInt32 = 0
     static let Y: UInt32 = 1
     static let SELECT: UInt32 = 2
@@ -28,24 +26,15 @@ final class InputBridge: ObservableObject {
 
     func set(_ id: UInt32, pressed: Bool) {
         lock.lock()
-        defer { lock.unlock() }
-        if pressed {
-            bits |= (1 << id)
-        } else {
-            bits &= ~(1 << id)
-        }
+        if pressed { bits |= (1 << id) } else { bits &= ~(1 << id) }
+        lock.unlock()
     }
 
-    func isPressed(_ id: UInt32) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return (bits & (1 << id)) != 0
-    }
-
-    /// Called from C input_state callback
-    nonisolated func state(port: UInt32, device: UInt32, index: UInt32, id: UInt32) -> Int16 {
-        // RETRO_DEVICE_JOYPAD = 1
-        guard port == 0, device == 1 || device == 0 else { return 0 }
+    /// Called from C input_state — accept JOYPAD (1) and generic (0).
+    func state(port: UInt32, device: UInt32, index: UInt32, id: UInt32) -> Int16 {
+        guard port == 0, id < 16 else { return 0 }
+        // RETRO_DEVICE_JOYPAD = 1, some cores pass 0
+        if device != 0 && device != 1 { return 0 }
         lock.lock()
         let v = (bits & (1 << id)) != 0
         lock.unlock()
@@ -58,7 +47,6 @@ final class InputBridge: ObservableObject {
         lock.unlock()
     }
 
-    /// Map face label → joypad id
     static func faceId(_ label: String) -> UInt32? {
         switch label.uppercased() {
         case "A": return A

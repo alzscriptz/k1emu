@@ -2,8 +2,8 @@ import SwiftUI
 import UIKit
 import WebKit
 
-/// Exact layout from reference: LT/LB · RT/RB, D-pad · GAME · YXBA,
-/// three dots, stick · Browser · stick.
+/// Controller layout: LT/LB · RT/RB, D-pad · GAME · YXBA,
+/// three dots, stick · Browser · stick. GAME takes most vertical space.
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -31,7 +31,9 @@ struct ControllerView: View {
     var body: some View {
         ZStack {
             Color.white.ignoresSafeArea()
-            photoLayout
+            GeometryReader { geo in
+                photoLayout(height: geo.size.height, width: geo.size.width)
+            }
 
             if appState.isMouseMode {
                 RoundedRectangle(cornerRadius: 16)
@@ -56,8 +58,13 @@ struct ControllerView: View {
         .onDisappear { InputBridge.shared.clearAll() }
     }
 
-    private var photoLayout: some View {
-        VStack(spacing: 0) {
+    private func photoLayout(height: CGFloat, width: CGFloat) -> some View {
+        // GAME gets ~48% of screen height so NDS dual-screen fills the panel
+        let gameH = max(220, height * 0.48)
+        let browserH: CGFloat = 72
+
+        return VStack(spacing: 0) {
+            // Top bar
             HStack {
                 Button {
                     haptic(.light)
@@ -91,76 +98,68 @@ struct ControllerView: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.top, 4)
+            .padding(.top, 2)
 
-            Spacer(minLength: 2)
-
+            // Shoulders
             HStack {
-                VStack(spacing: 5) {
+                VStack(spacing: 4) {
                     shoulderButton("LT")
                     shoulderButton("LB")
                 }
                 Spacer()
-                VStack(spacing: 5) {
+                VStack(spacing: 4) {
                     shoulderButton("RT")
                     shoulderButton("RB")
                 }
             }
-            .padding(.horizontal, 40)
+            .padding(.horizontal, 36)
+            .padding(.top, 4)
 
-            Spacer(minLength: 4)
-
-            // GAME row — taller so NDS 256×384 fills the panel
-            HStack(alignment: .center, spacing: 6) {
+            // GAME row — large
+            HStack(alignment: .center, spacing: 4) {
                 PhotoDPad()
-                    .frame(width: 84, height: 84)
+                    .frame(width: 88, height: 88)
 
                 gameScreen
                     .frame(maxWidth: .infinity)
-                    .frame(height: 200)
+                    .frame(height: gameH)
 
                 PhotoFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor)
-                    .frame(width: 96, height: 96)
+                    .frame(width: 100, height: 100)
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 8)
+            .padding(.top, 6)
 
-            HStack(spacing: 18) {
-                DotButton(systemImage: "rectangle.on.rectangle",
-                          isActive: appState.isMouseMode, activeColor: .blue) {
-                    haptic(.medium)
-                    appState.isMouseMode.toggle()
-                }
+            // Dots: Select · Browser toggle · Start
+            HStack(spacing: 22) {
+                holdDot(label: "−", id: InputBridge.SELECT)
                 DotButton(systemImage: "globe",
                           isActive: appState.showBrowserInPanel, activeColor: .cyan) {
                     haptic(.medium)
                     appState.toggleBrowserPanel()
                 }
-                DotButton(systemImage: "keyboard",
-                          isActive: appState.showKeyboardInPanel, activeColor: .orange) {
-                    haptic(.medium)
-                    appState.toggleKeyboardPanel()
-                }
+                holdDot(label: "+", id: InputBridge.START)
             }
-            .padding(.top, 6)
+            .padding(.top, 8)
 
-            Spacer(minLength: 6)
+            Spacer(minLength: 4)
 
-            HStack(alignment: .center, spacing: 10) {
+            // Sticks + Browser
+            HStack(alignment: .center, spacing: 8) {
                 PhotoStick(offset: $leftStick)
-                    .frame(width: 72, height: 72)
+                    .frame(width: 68, height: 68)
 
                 browserPanel
                     .frame(maxWidth: .infinity)
-                    .frame(height: 88)
+                    .frame(height: browserH)
 
                 PhotoStick(offset: $rightStick)
-                    .frame(width: 72, height: 72)
+                    .frame(width: 68, height: 68)
             }
             .padding(.horizontal, 12)
-
-            Spacer(minLength: 8)
-            // status chips removed for clean App Store UI
+            .padding(.bottom, 10)
         }
+        .frame(width: width, height: height)
     }
 
     private var gameScreen: some View {
@@ -171,7 +170,7 @@ struct ControllerView: View {
             if hasLivePixels {
                 EmulatorScreenView()
                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .padding(2)
+                    .padding(3)
             } else {
                 VStack(spacing: 4) {
                     Text("GAME")
@@ -237,6 +236,23 @@ struct ControllerView: View {
                             InputBridge.shared.set(id, pressed: false)
                         }
                         haptic(.soft)
+                    }
+            )
+    }
+
+    private func holdDot(label: String, id: UInt32) -> some View {
+        Text(label)
+            .font(.system(size: 14, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 28, height: 28)
+            .background(Circle().fill(Color.black.opacity(0.7)))
+            .contentShape(Circle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in InputBridge.shared.set(id, pressed: true) }
+                    .onEnded { _ in
+                        InputBridge.shared.set(id, pressed: false)
+                        haptic(.light)
                     }
             )
     }
@@ -364,8 +380,6 @@ struct ControllerSettingsModal: View {
     }
 }
 
-// MARK: - D-pad with hold support
-
 struct PhotoDPad: View {
     var body: some View {
         GeometryReader { geo in
@@ -383,7 +397,7 @@ struct PhotoDPad: View {
                         let c = CGPoint(x: s / 2, y: s / 2)
                         let dx = v.location.x - c.x
                         let dy = v.location.y - c.y
-                        let dead: CGFloat = 10
+                        let dead: CGFloat = 8
                         let ib = InputBridge.shared
                         ib.set(InputBridge.UP, pressed: dy < -dead)
                         ib.set(InputBridge.DOWN, pressed: dy > dead)
@@ -396,7 +410,6 @@ struct PhotoDPad: View {
                         ib.set(InputBridge.DOWN, pressed: false)
                         ib.set(InputBridge.LEFT, pressed: false)
                         ib.set(InputBridge.RIGHT, pressed: false)
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     }
             )
         }
@@ -408,18 +421,18 @@ struct PhotoFaceButtons: View {
 
     var body: some View {
         ZStack {
-            face(y, "Y").offset(y: -30)
-            face(x, "X").offset(x: -30)
-            face(b, "B").offset(x: 30)
-            face(a, "A").offset(y: 30)
+            face(y, "Y").offset(y: -32)
+            face(x, "X").offset(x: -32)
+            face(b, "B").offset(x: 32)
+            face(a, "A").offset(y: 32)
         }
     }
 
     private func face(_ color: Color, _ label: String) -> some View {
         Text(label)
-            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .font(.system(size: 13, weight: .bold, design: .rounded))
             .foregroundStyle(.white)
-            .frame(width: 34, height: 34)
+            .frame(width: 36, height: 36)
             .background(Circle().fill(color))
             .contentShape(Circle())
             .gesture(
