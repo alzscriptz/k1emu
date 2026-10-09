@@ -2,8 +2,8 @@ import SwiftUI
 import UIKit
 import WebKit
 
-/// Controller layout: LT/LB · RT/RB, D-pad · GAME · YXBA,
-/// three dots, stick · Browser · stick.
+/// Controller: shoulders, D-pad · GAME · face, dots, sticks · Browser.
+/// GAME panel is tall so full NDS dual-screen fits without zoom-crop.
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -26,6 +26,14 @@ struct ControllerView: View {
 
     private var hasLivePixels: Bool {
         (appState.usingBuiltinCore && chip8.isRunning) || (core.isRunning && fb.width > 0)
+    }
+
+    /// Preferred aspect for current framebuffer (default NDS dual = 256/384).
+    private var gameAspect: CGFloat {
+        if fb.width > 0, fb.height > 0 {
+            return CGFloat(fb.width) / CGFloat(fb.height)
+        }
+        return 256.0 / 384.0
     }
 
     var body: some View {
@@ -59,10 +67,16 @@ struct ControllerView: View {
     }
 
     private func photoLayout(height: CGFloat, width: CGFloat) -> some View {
-        // GAME takes most of the vertical space between shoulders and sticks
-        let gameH = max(260, height * 0.55)
         let stickSize: CGFloat = 92
-        let browserH: CGFloat = 70
+        let browserH: CGFloat = 64
+        let sideW: CGFloat = 96
+        // Max width for GAME between D-pad and face buttons
+        let gameW = max(120, width - sideW * 2 - 16)
+        // Height from aspect so FULL image fits (no crop): h = w / aspect
+        let idealH = gameW / gameAspect
+        // Cap so sticks/browser still fit
+        let maxH = height * 0.58
+        let gameH = min(max(idealH, 200), maxH)
 
         return VStack(spacing: 0) {
             HStack {
@@ -114,22 +128,19 @@ struct ControllerView: View {
             .padding(.horizontal, 36)
             .padding(.top, 2)
 
-            // GAME row
             HStack(alignment: .center, spacing: 4) {
                 PhotoDPad()
-                    .frame(width: 90, height: 90)
+                    .frame(width: sideW - 6, height: sideW - 6)
 
                 gameScreen
-                    .frame(maxWidth: .infinity)
-                    .frame(height: gameH)
+                    .frame(width: gameW, height: gameH)
 
                 PhotoFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor)
-                    .frame(width: 102, height: 102)
+                    .frame(width: sideW, height: sideW)
             }
             .padding(.horizontal, 6)
             .padding(.top, 4)
 
-            // Select · Browser · Start
             HStack(spacing: 22) {
                 holdDot(label: "−", id: InputBridge.SELECT)
                 DotButton(systemImage: "globe",
@@ -258,7 +269,7 @@ struct ControllerView: View {
     }
 }
 
-// MARK: - Browser / keyboard
+// MARK: - Browser / keyboard / chrome (unchanged behavior)
 
 struct InPanelBrowser: View {
     @EnvironmentObject var appState: AppState

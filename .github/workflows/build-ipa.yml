@@ -95,8 +95,7 @@ jobs:
           [ -f Cores/snes9x_libretro.dylib ] && cp Cores/snes9x_libretro.dylib Cores/libsnes.dylib || true
           [ -f Cores/gambatte_libretro.dylib ] && cp Cores/gambatte_libretro.dylib Cores/libgb.dylib || true
 
-          ls -lah Cores/ | head -40
-          echo "Count: $(ls Cores/*.dylib 2>/dev/null | wc -l)"
+          ls Cores/*.dylib 2>/dev/null | wc -l
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -138,15 +137,15 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.4.1
-          name: k1emu v2.4.1 — GAME fills panel + bigger sticks
+          tag_name: v2.4.2
+          name: k1emu v2.4.2 — full game visible (no zoom crop)
           body: |
-            - GAME pixels use **scaledToFill** — full black GAME window
-            - GAME panel ~55% of screen height
-            - Analog sticks ~92pt (medium)
-            - D-pad / ABXY / shoulders / Start+Select wired
+            - **No zoom/crop** — entire NDS dual-screen is visible (aspect-fit)
+            - GAME panel height matches framebuffer aspect so the image is as large as possible
+            - Medium sticks (~92pt)
+            - Controls: D-pad, ABXY, shoulders, Start/Select
 
-            Install: LiveContainer / AltStore / SideStore / TrollStore
+            Install with LiveContainer / AltStore / SideStore / TrollStore.
           files: k1emu.ipa
           make_latest: true
           fail_on_unmatched_files: false
