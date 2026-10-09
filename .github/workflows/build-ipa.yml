@@ -137,13 +137,12 @@ jobs:
       - name: Create / Update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v2.4.4
-          name: k1emu v2.4.4 — GAME taller + narrower (fills window)
+          tag_name: v2.4.5
+          name: k1emu v2.4.5 — large GAME + no logo chrome
           body: |
-            - GAME panel is **taller** and **narrower** so dual-screen fills the black box
-            - Sized from framebuffer aspect (height-first)
-            - Menu / TV / Close visible in landscape
-            - Controls: D-pad, ABXY, shoulders, Start/Select
+            - Removed K1 logo marks from library / settings
+            - GAME window large again (~half screen, full width between controls)
+            - Full dual-screen visible (aspect-fit, no crop)
 
             Install with LiveContainer / AltStore / SideStore / TrollStore.
           files: k1emu.ipa

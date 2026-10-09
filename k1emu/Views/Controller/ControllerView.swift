@@ -2,8 +2,7 @@ import SwiftUI
 import UIKit
 import WebKit
 
-/// Controller UI — works in portrait and landscape.
-/// GAME panel sized to framebuffer aspect (taller, narrower) so pixels fill it.
+/// Controller UI — large GAME window again (wide + tall).
 struct ControllerView: View {
     let game: GameItem
     var showGamePanel: Bool = true
@@ -26,13 +25,6 @@ struct ControllerView: View {
 
     private var hasLivePixels: Bool {
         (appState.usingBuiltinCore && chip8.isRunning) || (core.isRunning && fb.width > 0)
-    }
-
-    private var gameAspect: CGFloat {
-        if fb.width > 0, fb.height > 0 {
-            return CGFloat(fb.width) / CGFloat(fb.height)
-        }
-        return 256.0 / 384.0
     }
 
     var body: some View {
@@ -68,25 +60,17 @@ struct ControllerView: View {
         .onDisappear { InputBridge.shared.clearAll() }
     }
 
-    // MARK: - Layout
-
     private func layout(size: CGSize, landscape: Bool) -> some View {
         let stickSize: CGFloat = landscape ? 84 : 92
         let browserH: CGFloat = landscape ? 48 : 60
-        let sideW: CGFloat = landscape ? 90 : 98
+        let sideW: CGFloat = landscape ? 88 : 94
         let topBarH: CGFloat = 40
 
-        // Height-first: make GAME as tall as possible, then width from aspect.
-        // Result = taller + narrower panel so NDS dual-screen fills the black box.
-        let reserved = topBarH + browserH + stickSize + (landscape ? 64 : 80)
-        let maxGameH = max(180, size.height - reserved)
-        let gameH = maxGameH
-        let maxGameW = size.width - sideW * 2 - 8
-        // width = height * (w/h) so panel matches framebuffer aspect
-        var gameW = gameH * gameAspect
-        // keep a bit of side margin inside the row ("smaller on the sides")
-        gameW = min(gameW, maxGameW * 0.92)
-        gameW = max(gameW, 120)
+        // LARGE GAME window (like before) — wide between controls, ~half height
+        let gameW = max(160, size.width - sideW * 2 - 12)
+        let reserved = topBarH + browserH + stickSize + (landscape ? 60 : 76)
+        let maxGameH = max(200, size.height - reserved)
+        let gameH = min(maxGameH, size.height * (landscape ? 0.52 : 0.48))
 
         return VStack(spacing: 0) {
             topBar
@@ -111,12 +95,8 @@ struct ControllerView: View {
                 PhotoDPad()
                     .frame(width: sideW - 4, height: sideW - 4)
 
-                Spacer(minLength: 0)
-
                 gameScreen
                     .frame(width: gameW, height: gameH)
-
-                Spacer(minLength: 0)
 
                 PhotoFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor)
                     .frame(width: sideW, height: sideW)
@@ -197,16 +177,11 @@ struct ControllerView: View {
             if hasLivePixels {
                 EmulatorScreenView()
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .padding(1)
+                    .padding(2)
             } else {
-                VStack(spacing: 4) {
-                    Text("GAME")
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                    Text(game.displaySystem)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
+                Text("GAME")
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
             }
         }
     }
@@ -289,7 +264,7 @@ struct ControllerView: View {
     }
 }
 
-// MARK: - Browser / keyboard
+// MARK: - Browser / keyboard / controls
 
 struct InPanelBrowser: View {
     @EnvironmentObject var appState: AppState

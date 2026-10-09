@@ -23,10 +23,7 @@ struct EmuLibraryView: View {
 
                 Spacer()
 
-                HStack(spacing: 8) {
-                    K1Logo(size: 28)
-                    Text("k1emu").font(.headline.bold())
-                }
+                Text("k1emu").font(.headline.bold())
 
                 Spacer()
 
@@ -68,24 +65,27 @@ struct EmuLibraryView: View {
                                 }
                                 Divider()
                                 Button(role: .destructive) {
-                                    withAnimation { romLibrary.delete(game) }
+                                    romLibrary.remove(game)
                                 } label: {
-                                    Label("Delete", systemImage: "trash")
+                                    Label("Remove", systemImage: "trash")
                                 }
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 100)
+                    .padding(16)
                 }
             }
         }
+        .onAppear { romLibrary.scanDocumentsForROMs() }
     }
 
     private var emptyState: some View {
-        VStack(spacing: 20) {
-            K1Logo(size: 80)
-            Text("No games yet").font(.title2.bold())
+        VStack(spacing: 16) {
+            Image(systemName: "tray")
+                .font(.system(size: 40))
+                .foregroundStyle(.secondary)
+            Text("No games yet")
+                .font(.title3.bold())
             Text("Tap + to add a ROM, or drop files into\nFiles → On My iPhone → k1emu")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
@@ -148,13 +148,14 @@ struct GameCard: View {
 
             Button(action: onRun) {
                 HStack(spacing: 4) {
-                    Image(systemName: "play.fill").font(.caption2)
-                    Text("Run").font(.caption2.weight(.bold))
+                    Image(systemName: "play.fill")
+                    Text("Play")
                 }
+                .font(.caption.bold())
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(settings.accentColor.opacity(0.9)))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Capsule().fill(settings.accentColor))
             }
             .buttonStyle(.plain)
         }
@@ -162,14 +163,10 @@ struct GameCard: View {
 
     private func systemIcon(for system: String) -> String {
         switch system.uppercased() {
-        case "CHIP8": return "square.grid.3x3.fill"
-        case "NES", "FC": return "rectangle.grid.2x2"
-        case "SNES", "SFC": return "square.grid.3x3"
-        case "N64": return "cube"
-        case "GB", "GBC": return "gamecontroller"
-        case "GBA": return "gamecontroller.fill"
-        case "PS1", "PSX": return "opticaldisc"
-        case "NDS", "DS": return "rectangle.split.2x1"
+        case "NDS": return "n.square.fill"
+        case "GBA", "GB", "GBC": return "gamecontroller.fill"
+        case "NES", "SNES": return "tv.fill"
+        case "N64": return "cube.fill"
         default: return "opticaldisc.fill"
         }
     }
