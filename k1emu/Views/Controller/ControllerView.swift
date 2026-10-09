@@ -31,6 +31,11 @@ struct ControllerView: View {
         appState.usingBuiltinCore || game.system.uppercased() == "CHIP8"
     }
 
+    /// Sony systems use PlayStation glyphs and the matching libretro face-button IDs.
+    private var isPlayStation: Bool {
+        ["PSP", "PS1", "PSX", "PLAYSTATION", "PLAYSTATION 1"].contains(game.system.uppercased())
+    }
+
     var body: some View {
         ZStack {
             Color.white.ignoresSafeArea()
@@ -99,7 +104,7 @@ struct ControllerView: View {
                 pureGameScreen
                     .frame(width: gameW, height: gameH)
 
-                RefFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor, radius: faceR)
+                RefFaceButtons(y: yColor, x: xColor, b: bColor, a: aColor, radius: faceR, playStation: isPlayStation)
                     .frame(width: sideCtrl + 10, height: sideCtrl + 10)
             }
             .padding(.horizontal, gap)
@@ -450,14 +455,30 @@ struct RefDPad: View {
 struct RefFaceButtons: View {
     let y: Color, x: Color, b: Color, a: Color
     var radius: CGFloat = 18
+    var playStation: Bool = false
 
     var body: some View {
         let gap = radius * 2.2
         ZStack {
-            FaceButton(color: y, label: "Y", radius: radius).offset(y: -gap)
-            FaceButton(color: x, label: "X", radius: radius).offset(x: -gap)
-            FaceButton(color: b, label: "B", radius: radius).offset(x: gap)
-            FaceButton(color: a, label: "A", radius: radius).offset(y: gap)
+            // Libretro's standard layout maps X to the top, Y to the left,
+            // A to the right, and B to the bottom. Sony glyphs follow the
+            // physical PSP / PlayStation button positions.
+            FaceButton(color: playStation ? x : y,
+                       label: playStation ? "△" : "Y",
+                       inputLabel: playStation ? "X" : "Y",
+                       radius: radius).offset(y: -gap)
+            FaceButton(color: playStation ? y : x,
+                       label: playStation ? "□" : "X",
+                       inputLabel: playStation ? "Y" : "X",
+                       radius: radius).offset(x: -gap)
+            FaceButton(color: playStation ? a : b,
+                       label: playStation ? "○" : "B",
+                       inputLabel: playStation ? "A" : "B",
+                       radius: radius).offset(x: gap)
+            FaceButton(color: playStation ? b : a,
+                       label: playStation ? "×" : "A",
+                       inputLabel: playStation ? "B" : "A",
+                       radius: radius).offset(y: gap)
         }
     }
 }
@@ -465,6 +486,7 @@ struct RefFaceButtons: View {
 struct FaceButton: View {
     let color: Color
     let label: String
+    var inputLabel: String? = nil
     let radius: CGFloat
     @State private var pressed = false
 
@@ -486,14 +508,14 @@ struct FaceButton: View {
                     .onChanged { _ in
                         if !pressed {
                             pressed = true
-                            if let id = InputBridge.faceId(label) {
+                            if let id = InputBridge.faceId(inputLabel ?? label) {
                                 InputBridge.shared.set(id, pressed: true)
                             }
                         }
                     }
                     .onEnded { _ in
                         pressed = false
-                        if let id = InputBridge.faceId(label) {
+                        if let id = InputBridge.faceId(inputLabel ?? label) {
                             InputBridge.shared.set(id, pressed: false)
                         }
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
